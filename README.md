@@ -7,29 +7,29 @@ Supports both [MaxMind GeoIP2](https://www.maxmind.com) and [ip66.dev](https://i
 ## Usage
 
 ```
-$ curl ifconfig.co
+$ curl ip.2ac.io
 127.0.0.1
 
-$ curl ifconfig.co/country
+$ curl ip.2ac.io/country
 Elbonia
 
-$ curl ifconfig.co/country-iso
+$ curl ip.2ac.io/country-iso
 EB
 
-$ curl ifconfig.co/city
+$ curl ip.2ac.io/city
 Bornyasherk
 
-$ curl ifconfig.co/asn
+$ curl ip.2ac.io/asn
 AS31337
 
-$ curl ifconfig.co/asn-org
+$ curl ip.2ac.io/asn-org
 Dilbert Technologies
 ```
 
 As JSON:
 
 ```
-$ curl -H 'Accept: application/json' ifconfig.co  # or curl ifconfig.co/json
+$ curl -H 'Accept: application/json' ip.2ac.io  # or curl ip.2ac.io/json
 {
   "city": "Bornyasherk",
   "country": "Elbonia",
@@ -44,7 +44,7 @@ $ curl -H 'Accept: application/json' ifconfig.co  # or curl ifconfig.co/json
 Port testing:
 
 ```
-$ curl ifconfig.co/port/80
+$ curl ip.2ac.io/port/80
 {
   "ip": "127.0.0.1",
   "port": 80,

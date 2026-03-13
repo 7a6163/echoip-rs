@@ -7,49 +7,58 @@ Supports both [MaxMind GeoIP2](https://www.maxmind.com) and [ip66.dev](https://i
 ## Usage
 
 ```
-$ curl ip.2ac.io
-127.0.0.1
+$ curl localhost:8080
+1.2.3.4
 
-$ curl ip.2ac.io/country
-Elbonia
+$ curl localhost:8080/country
+United States
 
-$ curl ip.2ac.io/country-iso
-EB
+$ curl localhost:8080/country-iso
+US
 
-$ curl ip.2ac.io/city
-Bornyasherk
+$ curl localhost:8080/city
+San Francisco
 
-$ curl ip.2ac.io/asn
-AS31337
+$ curl localhost:8080/asn
+AS13335
 
-$ curl ip.2ac.io/asn-org
-Dilbert Technologies
+$ curl localhost:8080/asn-org
+Cloudflare, Inc.
 ```
 
 As JSON:
 
 ```
-$ curl -H 'Accept: application/json' ip.2ac.io  # or curl ip.2ac.io/json
+$ curl localhost:8080/json  # or curl -H 'Accept: application/json' localhost:8080
 {
-  "city": "Bornyasherk",
-  "country": "Elbonia",
-  "country_iso": "EB",
-  "ip": "127.0.0.1",
-  "ip_decimal": 2130706433,
-  "asn": "AS31337",
-  "asn_org": "Dilbert Technologies"
+  "ip": "1.2.3.4",
+  "ip_decimal": 16909060,
+  "country": "United States",
+  "country_iso": "US",
+  "city": "San Francisco",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "time_zone": "America/Los_Angeles",
+  "asn": "AS13335",
+  "asn_org": "Cloudflare, Inc."
 }
 ```
 
 Port testing:
 
 ```
-$ curl ip.2ac.io/port/80
+$ curl localhost:8080/port/443
 {
-  "ip": "127.0.0.1",
-  "port": 80,
-  "reachable": false
+  "ip": "1.2.3.4",
+  "port": 443,
+  "reachable": true
 }
+```
+
+Custom IP lookup:
+
+```
+$ curl localhost:8080/json?ip=8.8.8.8
 ```
 
 Pass `-4` or `-6` to your client to switch between IPv4 and IPv6 lookup.

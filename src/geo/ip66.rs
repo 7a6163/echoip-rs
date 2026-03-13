@@ -41,9 +41,8 @@ impl Ip66Provider {
     }
 }
 
-#[async_trait::async_trait]
 impl GeoProvider for Ip66Provider {
-    async fn country(&self, ip: IpAddr) -> Option<Country> {
+    fn country(&self, ip: IpAddr) -> Option<Country> {
         let result = self.db.lookup(ip).ok()?;
         let record: Ip66CountryRecord = result.decode().ok()??;
 
@@ -87,12 +86,12 @@ impl GeoProvider for Ip66Provider {
         })
     }
 
-    async fn city(&self, _ip: IpAddr) -> Option<City> {
+    fn city(&self, _ip: IpAddr) -> Option<City> {
         // ip66 MMDB does not include city-level data
         None
     }
 
-    async fn asn(&self, ip: IpAddr) -> Option<Asn> {
+    fn asn(&self, ip: IpAddr) -> Option<Asn> {
         let result = self.db.lookup(ip).ok()?;
         let record: Ip66AsnRecord = result.decode().ok()??;
 

@@ -15,10 +15,10 @@ pub async fn port_handler(
 ) -> Result<impl IntoResponse, AppError> {
     let port: u16 = port_str
         .parse()
-        .map_err(|_| AppError::bad_request(format!("invalid port: {port_str}")).as_json())?;
+        .map_err(|_| AppError::bad_request(format!("invalid port: {port_str}")).into_json())?;
 
     if port == 0 {
-        return Err(AppError::bad_request(format!("invalid port: {port_str}")).as_json());
+        return Err(AppError::bad_request(format!("invalid port: {port_str}")).into_json());
     }
 
     // Port lookup does NOT honor ?ip= parameter (security: no remote port scanning)
@@ -28,7 +28,7 @@ pub async fn port_handler(
         None,
         Some(remote.0.ip()),
     )
-    .map_err(|e| AppError::bad_request(e).as_json())?;
+    .map_err(|e| AppError::bad_request(e).into_json())?;
 
     let reachable = ip_util::lookup_port(ip, port).await;
 
@@ -39,7 +39,7 @@ pub async fn port_handler(
     };
 
     let body = serde_json::to_string_pretty(&resp)
-        .map_err(|e| AppError::internal(e.to_string()).as_json())?;
+        .map_err(|e| AppError::internal(e.to_string()).into_json())?;
 
     Ok((
         [(

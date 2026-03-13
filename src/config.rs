@@ -74,3 +74,52 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_listen_addr_with_colon() {
+        let config = Config {
+            listen: ":8080".into(),
+            country_db: String::new(),
+            city_db: String::new(),
+            asn_db: String::new(),
+            reverse_lookup: false,
+            port_lookup: false,
+            template: String::new(),
+            cache_size: 0,
+            profile: false,
+            sponsor: false,
+            trusted_headers: vec![],
+            ip66_db: None,
+            data_dir: "data".into(),
+            update_interval: 0,
+            no_auto_download: true,
+        };
+        assert_eq!(config.listen_addr(), "0.0.0.0:8080");
+    }
+
+    #[test]
+    fn test_listen_addr_full() {
+        let config = Config {
+            listen: "127.0.0.1:3000".into(),
+            country_db: String::new(),
+            city_db: String::new(),
+            asn_db: String::new(),
+            reverse_lookup: false,
+            port_lookup: false,
+            template: String::new(),
+            cache_size: 0,
+            profile: false,
+            sponsor: false,
+            trusted_headers: vec![],
+            ip66_db: None,
+            data_dir: "data".into(),
+            update_interval: 0,
+            no_auto_download: true,
+        };
+        assert_eq!(config.listen_addr(), "127.0.0.1:3000");
+    }
+}

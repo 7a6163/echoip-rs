@@ -149,9 +149,18 @@ mod tests {
 
         for (input, expected) in &tests {
             let ua = parse(input);
-            assert_eq!(ua.product, expected.product, "Product mismatch for {input:?}");
-            assert_eq!(ua.version, expected.version, "Version mismatch for {input:?}");
-            assert_eq!(ua.comment, expected.comment, "Comment mismatch for {input:?}");
+            assert_eq!(
+                ua.product, expected.product,
+                "Product mismatch for {input:?}"
+            );
+            assert_eq!(
+                ua.version, expected.version,
+                "Version mismatch for {input:?}"
+            );
+            assert_eq!(
+                ua.comment, expected.comment,
+                "Comment mismatch for {input:?}"
+            );
         }
     }
 

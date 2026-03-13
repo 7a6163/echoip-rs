@@ -10,13 +10,12 @@ mod helpers {
     use echoip::cache::Cache;
     use echoip::config::Config;
     use echoip::geo::{Asn, City, Country, GeoProvider};
-    use echoip::server::{build_router, AppState};
+    use echoip::server::{AppState, build_router};
 
     pub struct TestDb;
 
-    #[async_trait::async_trait]
     impl GeoProvider for TestDb {
-        async fn country(&self, _ip: IpAddr) -> Option<Country> {
+        fn country(&self, _ip: IpAddr) -> Option<Country> {
             Some(Country {
                 name: "Elbonia".into(),
                 iso: "EB".into(),
@@ -24,7 +23,7 @@ mod helpers {
             })
         }
 
-        async fn city(&self, _ip: IpAddr) -> Option<City> {
+        fn city(&self, _ip: IpAddr) -> Option<City> {
             Some(City {
                 name: "Bornyasherk".into(),
                 region_name: "North Elbonia".into(),
@@ -37,7 +36,7 @@ mod helpers {
             })
         }
 
-        async fn asn(&self, _ip: IpAddr) -> Option<Asn> {
+        fn asn(&self, _ip: IpAddr) -> Option<Asn> {
             Some(Asn {
                 number: 59795,
                 organization: "Hosting4Real".into(),
@@ -51,15 +50,14 @@ mod helpers {
 
     pub struct EmptyDb;
 
-    #[async_trait::async_trait]
     impl GeoProvider for EmptyDb {
-        async fn country(&self, _ip: IpAddr) -> Option<Country> {
+        fn country(&self, _ip: IpAddr) -> Option<Country> {
             None
         }
-        async fn city(&self, _ip: IpAddr) -> Option<City> {
+        fn city(&self, _ip: IpAddr) -> Option<City> {
             None
         }
-        async fn asn(&self, _ip: IpAddr) -> Option<Asn> {
+        fn asn(&self, _ip: IpAddr) -> Option<Asn> {
             None
         }
         fn is_empty(&self) -> bool {
@@ -88,10 +86,11 @@ mod helpers {
     }
 
     pub async fn start_server(geo: Arc<dyn GeoProvider>, config: Config) -> String {
+        let cache_size = config.cache_size;
         let state = AppState {
             config: Arc::new(config),
             geo,
-            cache: Arc::new(RwLock::new(Cache::new(100))),
+            cache: Arc::new(RwLock::new(Cache::new(cache_size))),
             tera: None,
         };
 
@@ -143,13 +142,7 @@ async fn test_cli_handlers() {
         ("/ip", "127.0.0.1\n", 200, "", ""),
         ("/country", "Elbonia\n", 200, "", ""),
         ("/country-iso", "EB\n", 200, "", ""),
-        (
-            "/coordinates",
-            "63.416667,10.416667\n",
-            200,
-            "",
-            "",
-        ),
+        ("/coordinates", "63.416667,10.416667\n", 200, "", ""),
         ("/city", "Bornyasherk\n", 200, "", ""),
         ("/foo", "404 page not found", 404, "", ""),
         ("/asn", "AS59795\n", 200, "", ""),
@@ -249,7 +242,11 @@ async fn test_json_handlers() {
             "{\n  \"status\": 400,\n  \"error\": \"invalid port: 65537\"\n}",
             400,
         ),
-        ("/foo", "{\n  \"status\": 404,\n  \"error\": \"404 page not found\"\n}", 404),
+        (
+            "/foo",
+            "{\n  \"status\": 404,\n  \"error\": \"404 page not found\"\n}",
+            404,
+        ),
         ("/health", "{\"status\":\"OK\"}", 200),
     ];
 
@@ -273,12 +270,7 @@ async fn test_cache_handler() {
     };
     let base = start_server(Arc::new(TestDb), config).await;
 
-    let (body, status) = http_get(
-        &format!("{base}/debug/cache/"),
-        "application/json",
-        "",
-    )
-    .await;
+    let (body, status) = http_get(&format!("{base}/debug/cache/"), "application/json", "").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         body,
@@ -332,4 +324,129 @@ async fn test_cli_matcher() {
         assert_eq!(status, StatusCode::OK, "Failed for UA: {ua}");
         assert_eq!(body, "127.0.0.1\n", "Failed for UA: {ua}");
     }
+}
+
+#[tokio::test]
+async fn test_head_request() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let client = reqwest::Client::new();
+    let resp = client.head(&base).send().await.unwrap();
+    assert_eq!(resp.status().as_u16(), 204);
+}
+
+#[tokio::test]
+async fn test_query_ip_override() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(&format!("{base}/ip?ip=8.8.8.8"), "", "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "8.8.8.8\n");
+}
+
+#[tokio::test]
+async fn test_json_query_ip() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(
+        &format!("{base}/json?ip=8.8.8.8"),
+        "application/json",
+        "curl/7.0",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["ip"], "8.8.8.8");
+}
+
+#[tokio::test]
+async fn test_ipv6_handling() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(&format!("{base}/ip?ip=::1"), "", "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, "::1\n");
+}
+
+#[tokio::test]
+async fn test_cache_hit_miss() {
+    let config = Config {
+        profile: true,
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    // First request: cache miss
+    let (_, status) = http_get(&format!("{base}/json"), "application/json", "curl/7.0").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Check cache now has 1 entry
+    let (body, _) = http_get(&format!("{base}/debug/cache/"), "application/json", "").await;
+    let stats: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(stats["size"], 1);
+
+    // Second request: cache hit (same IP)
+    let (_, status) = http_get(&format!("{base}/json"), "application/json", "curl/7.0").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Cache should still have 1 entry (same IP)
+    let (body, _) = http_get(&format!("{base}/debug/cache/"), "application/json", "").await;
+    let stats: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(stats["size"], 1);
+}
+
+#[tokio::test]
+async fn test_cache_disabled() {
+    let config = Config {
+        cache_size: 0,
+        profile: true,
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    let (_, status) = http_get(&format!("{base}/json"), "application/json", "curl/7.0").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (body, _) = http_get(&format!("{base}/debug/cache/"), "application/json", "").await;
+    let stats: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(stats["size"], 0);
+    assert_eq!(stats["capacity"], 0);
+}
+
+#[tokio::test]
+async fn test_trusted_header() {
+    let config = Config {
+        trusted_headers: vec!["X-Real-IP".to_string()],
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{base}/ip"))
+        .header("X-Real-IP", "10.0.0.1")
+        .send()
+        .await
+        .unwrap();
+    let body = resp.text().await.unwrap();
+    assert_eq!(body, "10.0.0.1\n");
+}
+
+#[tokio::test]
+async fn test_forwarded_for_first_ip() {
+    let config = Config {
+        trusted_headers: vec!["X-Forwarded-For".to_string()],
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{base}/ip"))
+        .header("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+        .send()
+        .await
+        .unwrap();
+    let body = resp.text().await.unwrap();
+    assert_eq!(body, "1.2.3.4\n");
 }

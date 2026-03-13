@@ -1,8 +1,8 @@
 use std::net::IpAddr;
 
 use num_bigint::BigUint;
-use serde::ser::Serializer;
 use serde::Serialize;
+use serde::ser::Serializer;
 
 use crate::user_agent::UserAgent;
 
@@ -75,4 +75,108 @@ pub struct PortResponse {
     pub ip: IpAddr,
     pub port: u16,
     pub reachable: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_response(ip: IpAddr) -> Response {
+        Response {
+            ip,
+            ip_decimal: crate::ip_util::to_decimal(ip),
+            country: String::new(),
+            country_iso: String::new(),
+            country_eu: false,
+            region_name: String::new(),
+            region_code: String::new(),
+            metro_code: 0,
+            zip_code: String::new(),
+            city: String::new(),
+            latitude: 0.0,
+            longitude: 0.0,
+            time_zone: String::new(),
+            asn: String::new(),
+            asn_org: String::new(),
+            hostname: String::new(),
+            user_agent: None,
+        }
+    }
+
+    #[test]
+    fn test_serialize_ipv4() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let resp = test_response(ip);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["ip"], "127.0.0.1");
+        assert_eq!(json["ip_decimal"], 2130706433u64);
+    }
+
+    #[test]
+    fn test_serialize_ipv6() {
+        let ip: IpAddr = "::1".parse().unwrap();
+        let resp = test_response(ip);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["ip"], "::1");
+        assert_eq!(json["ip_decimal"], 1);
+    }
+
+    #[test]
+    fn test_serialize_ipv6_large_decimal() {
+        let ip: IpAddr = "8000::".parse().unwrap();
+        let resp = test_response(ip);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["ip"], "8000::");
+        // Large IPv6 decimal should be serialized as string
+        assert_eq!(
+            json["ip_decimal"],
+            "170141183460469231731687303715884105728"
+        );
+    }
+
+    #[test]
+    fn test_skip_empty_fields() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let resp = test_response(ip);
+        let json = serde_json::to_value(&resp).unwrap();
+        // Empty strings should be skipped
+        assert!(json.get("country").is_none());
+        assert!(json.get("city").is_none());
+        assert!(json.get("asn").is_none());
+        // Zero values should be skipped
+        assert!(json.get("latitude").is_none());
+        assert!(json.get("metro_code").is_none());
+        // False bool should be skipped
+        assert!(json.get("country_eu").is_none());
+        // None should be skipped
+        assert!(json.get("user_agent").is_none());
+    }
+
+    #[test]
+    fn test_include_non_empty_fields() {
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        let mut resp = test_response(ip);
+        resp.country = "US".into();
+        resp.latitude = 37.7;
+        resp.country_eu = true;
+        resp.metro_code = 807;
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["country"], "US");
+        assert_eq!(json["latitude"], 37.7);
+        assert_eq!(json["country_eu"], true);
+        assert_eq!(json["metro_code"], 807);
+    }
+
+    #[test]
+    fn test_port_response_serialize() {
+        let resp = PortResponse {
+            ip: "192.168.1.1".parse().unwrap(),
+            port: 443,
+            reachable: true,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["ip"], "192.168.1.1");
+        assert_eq!(json["port"], 443);
+        assert_eq!(json["reachable"], true);
+    }
 }

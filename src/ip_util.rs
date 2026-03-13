@@ -5,6 +5,8 @@ use num_bigint::BigUint;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+const DNS_TIMEOUT: Duration = Duration::from_secs(3);
+
 pub fn to_decimal(ip: IpAddr) -> BigUint {
     match ip {
         IpAddr::V4(v4) => BigUint::from_bytes_be(&v4.octets()),
@@ -13,10 +15,14 @@ pub fn to_decimal(ip: IpAddr) -> BigUint {
 }
 
 pub async fn lookup_addr(ip: IpAddr) -> Option<String> {
-    let result = tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip)).await;
+    let result = timeout(
+        DNS_TIMEOUT,
+        tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip)),
+    )
+    .await;
 
     match result {
-        Ok(Ok(hostname)) => {
+        Ok(Ok(Ok(hostname))) => {
             let trimmed = hostname.trim_end_matches('.');
             if trimmed.is_empty() {
                 None
@@ -54,16 +60,18 @@ pub fn parse_ip(s: &str) -> Result<IpAddr, String> {
     // Try stripping port from IPv6 [addr]:port
     if s.starts_with('[')
         && let Some((addr, _)) = s.strip_prefix('[').and_then(|s| s.split_once("]:"))
-            && let Ok(ip) = addr.parse::<IpAddr>() {
-                return Ok(ip);
-            }
+        && let Ok(ip) = addr.parse::<IpAddr>()
+    {
+        return Ok(ip);
+    }
 
     // Try stripping port from IPv4 addr:port (only if exactly one colon)
     if s.matches(':').count() == 1
         && let Some((host, _)) = s.rsplit_once(':')
-            && let Ok(ip) = host.parse::<IpAddr>() {
-                return Ok(ip);
-            }
+        && let Ok(ip) = host.parse::<IpAddr>()
+    {
+        return Ok(ip);
+    }
 
     Err(format!("could not parse IP: {s}"))
 }
@@ -76,9 +84,10 @@ pub fn extract_ip(
 ) -> Result<IpAddr, String> {
     // Query parameter takes priority
     if let Some(ip_str) = query_ip
-        && !ip_str.is_empty() {
-            return parse_ip(ip_str);
-        }
+        && !ip_str.is_empty()
+    {
+        return parse_ip(ip_str);
+    }
 
     // Trusted headers
     for header in headers {
@@ -132,10 +141,7 @@ mod tests {
             parse_ip("[::ffff:103:307]:1337").unwrap(),
             "::ffff:103:307".parse::<IpAddr>().unwrap()
         );
-        assert_eq!(
-            parse_ip("::1").unwrap(),
-            "::1".parse::<IpAddr>().unwrap()
-        );
+        assert_eq!(parse_ip("::1").unwrap(), "::1".parse::<IpAddr>().unwrap());
         assert!(parse_ip("").is_err());
     }
 
@@ -144,5 +150,56 @@ mod tests {
         assert_eq!(ip_from_forwarded_for("1.3.3.7"), "1.3.3.7");
         assert_eq!(ip_from_forwarded_for("1.3.3.7,4.2.4.2"), "1.3.3.7");
         assert_eq!(ip_from_forwarded_for("1.3.3.7, 4.2.4.2"), "1.3.3.7");
+    }
+
+    #[test]
+    fn test_extract_ip_from_query() {
+        let headers = axum::http::HeaderMap::new();
+        let result = extract_ip(&[], &headers, Some("8.8.8.8"), None);
+        assert_eq!(result.unwrap(), "8.8.8.8".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_ip_from_remote() {
+        let headers = axum::http::HeaderMap::new();
+        let remote: IpAddr = "192.168.1.1".parse().unwrap();
+        let result = extract_ip(&[], &headers, None, Some(remote));
+        assert_eq!(result.unwrap(), remote);
+    }
+
+    #[test]
+    fn test_extract_ip_from_trusted_header() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-real-ip", "10.0.0.1".parse().unwrap());
+        let trusted = vec!["x-real-ip".to_string()];
+        let result = extract_ip(&trusted, &headers, None, None);
+        assert_eq!(result.unwrap(), "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_ip_forwarded_for() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-forwarded-for", "1.2.3.4, 5.6.7.8".parse().unwrap());
+        let trusted = vec!["x-forwarded-for".to_string()];
+        let result = extract_ip(&trusted, &headers, None, None);
+        assert_eq!(result.unwrap(), "1.2.3.4".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_ip_query_priority() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-real-ip", "10.0.0.1".parse().unwrap());
+        let trusted = vec!["x-real-ip".to_string()];
+        let remote: IpAddr = "192.168.1.1".parse().unwrap();
+        // Query IP takes priority over header and remote
+        let result = extract_ip(&trusted, &headers, Some("8.8.8.8"), Some(remote));
+        assert_eq!(result.unwrap(), "8.8.8.8".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn test_extract_ip_no_source() {
+        let headers = axum::http::HeaderMap::new();
+        let result = extract_ip(&[], &headers, None, None);
+        assert!(result.is_err());
     }
 }

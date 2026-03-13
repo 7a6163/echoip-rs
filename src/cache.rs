@@ -6,7 +6,7 @@ use lru::LruCache;
 use crate::response::Response;
 
 pub struct Cache {
-    inner: LruCache<IpAddr, Response>,
+    inner: Option<LruCache<IpAddr, Response>>,
     evictions: u64,
 }
 
@@ -19,47 +19,60 @@ pub struct CacheStats {
 
 impl Cache {
     pub fn new(capacity: usize) -> Self {
-        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
+        let inner = NonZeroUsize::new(capacity).map(LruCache::new);
         Self {
-            inner: LruCache::new(cap),
+            inner,
             evictions: 0,
         }
     }
 
     pub fn set(&mut self, ip: IpAddr, response: Response) {
-        if self.capacity() == 0 {
-            return;
-        }
+        let cache = match self.inner.as_mut() {
+            Some(c) => c,
+            None => return,
+        };
 
-        if self.inner.len() == self.inner.cap().get() && self.inner.peek(&ip).is_none() {
+        if cache.len() == cache.cap().get() && cache.peek(&ip).is_none() {
             self.evictions += 1;
         }
 
-        self.inner.push(ip, response);
+        cache.push(ip, response);
     }
 
     pub fn get(&mut self, ip: IpAddr) -> Option<Response> {
-        self.inner.get(&ip).cloned()
+        self.inner.as_mut()?.get(&ip).cloned()
     }
 
     pub fn resize(&mut self, capacity: usize) {
-        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
-        self.inner.resize(cap);
+        match NonZeroUsize::new(capacity) {
+            Some(cap) => {
+                if let Some(cache) = self.inner.as_mut() {
+                    cache.resize(cap);
+                } else {
+                    self.inner = Some(LruCache::new(cap));
+                }
+            }
+            None => {
+                self.inner = None;
+            }
+        }
         self.evictions = 0;
     }
 
     pub fn capacity(&self) -> usize {
-        self.inner.cap().get()
+        self.inner.as_ref().map_or(0, |c| c.cap().get())
     }
 
     pub fn clear(&mut self) {
-        self.inner.clear();
+        if let Some(cache) = self.inner.as_mut() {
+            cache.clear();
+        }
     }
 
     pub fn stats(&self) -> CacheStats {
         CacheStats {
-            size: self.inner.len(),
-            capacity: self.inner.cap().get(),
+            size: self.inner.as_ref().map_or(0, |c| c.len()),
+            capacity: self.capacity(),
             evictions: self.evictions,
         }
     }
@@ -93,6 +106,17 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_disabled() {
+        let mut cache = Cache::new(0);
+        assert_eq!(cache.capacity(), 0);
+
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        cache.set(ip, make_response(ip));
+        assert!(cache.get(ip).is_none());
+        assert_eq!(cache.stats().size, 0);
+    }
+
+    #[test]
     fn test_cache_capacity() {
         let tests = vec![
             (1, 0, 0, 0u64),
@@ -111,9 +135,9 @@ mod tests {
                 cache.set(ip, make_response(ip));
             }
 
-            let actual_size = if capacity == 0 { 0 } else { cache.inner.len() };
             assert_eq!(
-                actual_size, expected_size,
+                cache.stats().size,
+                expected_size,
                 "size mismatch for add={add_count} cap={capacity}"
             );
             assert_eq!(
@@ -136,7 +160,7 @@ mod tests {
         let ip: IpAddr = "192.0.2.1".parse().unwrap();
         cache.set(ip, make_response(ip));
         cache.set(ip, make_response(ip));
-        assert_eq!(cache.inner.len(), 1);
+        assert_eq!(cache.stats().size, 1);
     }
 
     #[test]
@@ -146,7 +170,7 @@ mod tests {
             let ip: IpAddr = format!("192.0.2.{i}").parse().unwrap();
             cache.set(ip, make_response(ip));
         }
-        assert_eq!(cache.inner.len(), 10);
+        assert_eq!(cache.stats().size, 10);
         assert_eq!(cache.evictions, 10);
 
         cache.resize(5);
@@ -154,7 +178,24 @@ mod tests {
 
         let ip: IpAddr = "192.0.2.42".parse().unwrap();
         cache.set(ip, make_response(ip));
-        assert_eq!(cache.inner.len(), 5);
+        assert_eq!(cache.stats().size, 5);
+    }
+
+    #[test]
+    fn test_cache_resize_to_zero() {
+        let mut cache = Cache::new(10);
+        let ip: IpAddr = "192.0.2.1".parse().unwrap();
+        cache.set(ip, make_response(ip));
+
+        cache.resize(0);
+        assert_eq!(cache.capacity(), 0);
+        assert!(cache.get(ip).is_none());
+
+        // Can re-enable
+        cache.resize(5);
+        assert_eq!(cache.capacity(), 5);
+        cache.set(ip, make_response(ip));
+        assert!(cache.get(ip).is_some());
     }
 
     #[test]
@@ -175,7 +216,10 @@ mod tests {
         // Adding ip4 should evict ip2 (LRU), not ip1
         cache.set(ip4, make_response(ip4));
 
-        assert!(cache.get(ip1).is_some(), "ip1 was accessed recently, should survive");
+        assert!(
+            cache.get(ip1).is_some(),
+            "ip1 was accessed recently, should survive"
+        );
         assert!(cache.get(ip2).is_none(), "ip2 was LRU, should be evicted");
         assert!(cache.get(ip3).is_some(), "ip3 should survive");
         assert!(cache.get(ip4).is_some(), "ip4 was just added");

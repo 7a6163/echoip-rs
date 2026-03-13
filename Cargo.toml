@@ -2,6 +2,7 @@
 name = "echoip"
 version = "1.0.0"
 edition = "2024"
+rust-version = "1.85"
 description = "A simple service for looking up your IP address with geolocation"
 license = "BSD-3-Clause"
 repository = "https://github.com/7a6163/echoip-rs"
@@ -18,12 +19,10 @@ path = "src/lib.rs"
 
 [dependencies]
 arc-swap = "1"
-async-trait = "0.1"
 axum = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
 dns-lookup = "3"
 flate2 = "1"
-fnv = "1"
 lru = "0.12"
 maxminddb = "0.27"
 num-bigint = "0.4"

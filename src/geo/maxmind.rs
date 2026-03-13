@@ -102,9 +102,8 @@ impl MaxmindProvider {
     }
 }
 
-#[async_trait::async_trait]
 impl GeoProvider for MaxmindProvider {
-    async fn country(&self, ip: IpAddr) -> Option<Country> {
+    fn country(&self, ip: IpAddr) -> Option<Country> {
         let db = self.country_db.as_ref()?;
         let result = db.lookup(ip).ok()?;
         let record: CountryRecord = result.decode().ok()??;
@@ -115,9 +114,10 @@ impl GeoProvider for MaxmindProvider {
 
         if let Some(ref c) = record.country {
             if let Some(ref names) = c.names
-                && let Some(n) = names.get("en") {
-                    name = n.to_string();
-                }
+                && let Some(n) = names.get("en")
+            {
+                name = n.to_string();
+            }
             if let Some(ref code) = c.iso_code {
                 iso = code.clone();
             }
@@ -128,19 +128,21 @@ impl GeoProvider for MaxmindProvider {
         if let Some(ref rc) = record.registered_country {
             if name.is_empty()
                 && let Some(ref names) = rc.names
-                    && let Some(n) = names.get("en") {
-                        name = n.to_string();
-                    }
+                && let Some(n) = names.get("en")
+            {
+                name = n.to_string();
+            }
             if iso.is_empty()
-                && let Some(ref code) = rc.iso_code {
-                    iso = code.clone();
-                }
+                && let Some(ref code) = rc.iso_code
+            {
+                iso = code.clone();
+            }
         }
 
         Some(Country { name, iso, is_eu })
     }
 
-    async fn city(&self, ip: IpAddr) -> Option<City> {
+    fn city(&self, ip: IpAddr) -> Option<City> {
         let db = self.city_db.as_ref()?;
         let result = db.lookup(ip).ok()?;
         let record: CityRecord = result.decode().ok()??;
@@ -149,37 +151,39 @@ impl GeoProvider for MaxmindProvider {
 
         if let Some(ref c) = record.city
             && let Some(ref names) = c.names
-                && let Some(n) = names.get("en") {
-                    city.name = n.to_string();
-                }
+            && let Some(n) = names.get("en")
+        {
+            city.name = n.to_string();
+        }
 
         if let Some(ref subs) = record.subdivisions
-            && let Some(first) = subs.first() {
-                if let Some(ref names) = first.names
-                    && let Some(n) = names.get("en") {
-                        city.region_name = n.to_string();
-                    }
-                if let Some(ref code) = first.iso_code {
-                    city.region_code = code.clone();
-                }
+            && let Some(first) = subs.first()
+        {
+            if let Some(ref names) = first.names
+                && let Some(n) = names.get("en")
+            {
+                city.region_name = n.to_string();
             }
+            if let Some(ref code) = first.iso_code {
+                city.region_code = code.clone();
+            }
+        }
 
         if let Some(ref loc) = record.location {
             if let Some(lat) = loc.latitude
-                && !lat.is_nan() {
-                    city.latitude = lat;
-                }
+                && !lat.is_nan()
+            {
+                city.latitude = lat;
+            }
             if let Some(lon) = loc.longitude
-                && !lon.is_nan() {
-                    city.longitude = lon;
-                }
+                && !lon.is_nan()
+            {
+                city.longitude = lon;
+            }
             // Metro code is US only
             if let Some(metro) = loc.metro_code {
-                let is_us = record
-                    .country
-                    .as_ref()
-                    .and_then(|c| c.iso_code.as_deref())
-                    == Some("US");
+                let is_us =
+                    record.country.as_ref().and_then(|c| c.iso_code.as_deref()) == Some("US");
                 if metro > 0 && is_us {
                     city.metro_code = metro;
                 }
@@ -190,14 +194,15 @@ impl GeoProvider for MaxmindProvider {
         }
 
         if let Some(ref postal) = record.postal
-            && let Some(ref code) = postal.code {
-                city.postal_code = code.clone();
-            }
+            && let Some(ref code) = postal.code
+        {
+            city.postal_code = code.clone();
+        }
 
         Some(city)
     }
 
-    async fn asn(&self, ip: IpAddr) -> Option<Asn> {
+    fn asn(&self, ip: IpAddr) -> Option<Asn> {
         let db = self.asn_db.as_ref()?;
         let result = db.lookup(ip).ok()?;
         let record: AsnRecord = result.decode().ok()??;

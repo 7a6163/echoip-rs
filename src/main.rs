@@ -9,7 +9,7 @@ use echoip::cache::Cache;
 use echoip::config::Config;
 use echoip::db_updater::{self, DbUpdater, MaxmindAuth};
 use echoip::geo::SwappableGeoProvider;
-use echoip::server::{build_router, AppState};
+use echoip::server::{AppState, build_router};
 
 #[tokio::main]
 async fn main() {
@@ -34,7 +34,9 @@ async fn main() {
     // Resolve effective paths: CLI flags > auto-downloaded > none
     let country_path = db_updater::resolve_paths(
         &config.country_db,
-        &download_result.as_ref().and_then(|r| r.country_path.clone()),
+        &download_result
+            .as_ref()
+            .and_then(|r| r.country_path.clone()),
     );
     let city_path = db_updater::resolve_paths(
         &config.city_db,
@@ -123,22 +125,13 @@ async fn main() {
                 tokio::time::sleep(std::time::Duration::from_secs(interval_hours * 3600)).await;
                 info!("Starting periodic database update...");
 
-                let updater =
-                    DbUpdater::new(data_dir.clone().into(), maxmind_auth.clone());
+                let updater = DbUpdater::new(data_dir.clone().into(), maxmind_auth.clone());
                 let result = updater.download_all().await;
 
-                let cp = db_updater::resolve_paths(
-                    &config_for_updater.country_db,
-                    &result.country_path,
-                );
-                let cip = db_updater::resolve_paths(
-                    &config_for_updater.city_db,
-                    &result.city_path,
-                );
-                let ap = db_updater::resolve_paths(
-                    &config_for_updater.asn_db,
-                    &result.asn_path,
-                );
+                let cp =
+                    db_updater::resolve_paths(&config_for_updater.country_db, &result.country_path);
+                let cip = db_updater::resolve_paths(&config_for_updater.city_db, &result.city_path);
+                let ap = db_updater::resolve_paths(&config_for_updater.asn_db, &result.asn_path);
                 let ip = db_updater::resolve_paths(
                     config_for_updater.ip66_db.as_deref().unwrap_or(""),
                     &result.ip66_path,
@@ -157,7 +150,7 @@ async fn main() {
                 // Clear cache to avoid serving stale geo data
                 {
                     let mut c = cache_for_updater.write().await;
-                    *c = Cache::new(c.capacity());
+                    c.clear();
                 }
                 info!("Cache cleared after database update");
             }
@@ -177,6 +170,33 @@ async fn main() {
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await
     .expect("server error");
+
+    info!("Server shut down gracefully");
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => { info!("Received Ctrl+C, shutting down..."); }
+        () = terminate => { info!("Received SIGTERM, shutting down..."); }
+    }
 }

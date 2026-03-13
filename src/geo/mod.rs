@@ -32,11 +32,10 @@ pub struct Asn {
     pub organization: String,
 }
 
-#[async_trait::async_trait]
 pub trait GeoProvider: Send + Sync {
-    async fn country(&self, ip: IpAddr) -> Option<Country>;
-    async fn city(&self, ip: IpAddr) -> Option<City>;
-    async fn asn(&self, ip: IpAddr) -> Option<Asn>;
+    fn country(&self, ip: IpAddr) -> Option<Country>;
+    fn city(&self, ip: IpAddr) -> Option<City>;
+    fn asn(&self, ip: IpAddr) -> Option<Asn>;
     fn is_empty(&self) -> bool;
 }
 
@@ -57,18 +56,17 @@ impl SwappableGeoProvider {
     }
 }
 
-#[async_trait::async_trait]
 impl GeoProvider for SwappableGeoProvider {
-    async fn country(&self, ip: IpAddr) -> Option<Country> {
-        self.inner.load().country(ip).await
+    fn country(&self, ip: IpAddr) -> Option<Country> {
+        self.inner.load().country(ip)
     }
 
-    async fn city(&self, ip: IpAddr) -> Option<City> {
-        self.inner.load().city(ip).await
+    fn city(&self, ip: IpAddr) -> Option<City> {
+        self.inner.load().city(ip)
     }
 
-    async fn asn(&self, ip: IpAddr) -> Option<Asn> {
-        self.inner.load().asn(ip).await
+    fn asn(&self, ip: IpAddr) -> Option<Asn> {
+        self.inner.load().asn(ip)
     }
 
     fn is_empty(&self) -> bool {

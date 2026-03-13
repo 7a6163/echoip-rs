@@ -31,7 +31,7 @@ pub async fn ip_handler(
         query_ip,
         Some(remote.0.ip()),
     )
-    .map_err(|e| AppError::bad_request(&e).as_json())?;
+    .map_err(|e| AppError::bad_request(&e).into_json())?;
     Ok(format!("{ip}\n"))
 }
 

@@ -17,10 +17,11 @@ pub async fn html_handler(
         .ok_or_else(|| AppError::internal("templates not configured"))?;
 
     let query_ip = query.get("ip").map(|s| s.as_str());
-    let resp = crate::server::build_response(&state, &headers, query_ip, Some(remote.0.ip())).await?;
+    let resp =
+        crate::server::build_response(&state, &headers, query_ip, Some(remote.0.ip())).await?;
 
-    let json_str = serde_json::to_string_pretty(&resp)
-        .map_err(|e| AppError::internal(e.to_string()))?;
+    let json_str =
+        serde_json::to_string_pretty(&resp).map_err(|e| AppError::internal(e.to_string()))?;
 
     let mut ctx = tera::Context::new();
     ctx.insert("IP", &resp.ip.to_string());

@@ -1,12 +1,13 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
 use tokio::sync::RwLock;
+use tower_http::trace::TraceLayer;
 
 use crate::cache::Cache;
 use crate::config::Config;
@@ -24,37 +25,45 @@ pub struct AppState {
     pub tera: Option<Arc<tera::Tera>>,
 }
 
+fn attach_user_agent(resp: &mut response::Response, headers: &HeaderMap) {
+    let ua_str = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    resp.user_agent = if ua_str.is_empty() {
+        None
+    } else {
+        Some(user_agent::parse(ua_str))
+    };
+}
+
 pub async fn build_response(
     state: &AppState,
     headers: &HeaderMap,
     query_ip: Option<&str>,
     remote_addr: Option<IpAddr>,
 ) -> Result<response::Response, AppError> {
-    let ip = ip_util::extract_ip(&state.config.trusted_headers, headers, query_ip, remote_addr)
-        .map_err(|e| AppError::bad_request(&e).as_json())?;
+    let ip = ip_util::extract_ip(
+        &state.config.trusted_headers,
+        headers,
+        query_ip,
+        remote_addr,
+    )
+    .map_err(|e| AppError::bad_request(&e).into_json())?;
 
     // Check cache
     {
         let mut cache = state.cache.write().await;
         if let Some(mut cached) = cache.get(ip) {
-            // Do not cache user agent
-            let ua_str = headers
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-            cached.user_agent = if ua_str.is_empty() {
-                None
-            } else {
-                Some(user_agent::parse(ua_str))
-            };
+            attach_user_agent(&mut cached, headers);
             return Ok(cached);
         }
     }
 
     let ip_decimal = ip_util::to_decimal(ip);
-    let country = state.geo.country(ip).await.unwrap_or_default();
-    let city = state.geo.city(ip).await.unwrap_or_default();
-    let asn = state.geo.asn(ip).await.unwrap_or_default();
+    let country = state.geo.country(ip).unwrap_or_default();
+    let city = state.geo.city(ip).unwrap_or_default();
+    let asn = state.geo.asn(ip).unwrap_or_default();
 
     let hostname = if state.config.reverse_lookup {
         ip_util::lookup_addr(ip).await.unwrap_or_default()
@@ -95,16 +104,8 @@ pub async fn build_response(
     }
 
     // Add user agent (not cached)
-    let ua_str = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
     let mut resp = resp;
-    resp.user_agent = if ua_str.is_empty() {
-        None
-    } else {
-        Some(user_agent::parse(ua_str))
-    };
+    attach_user_agent(&mut resp, headers);
 
     Ok(resp)
 }
@@ -126,13 +127,7 @@ async fn root_handler(
         .unwrap_or("");
 
     if accept.contains("application/json") {
-        return match crate::handlers::json::json_handler(
-            State(state),
-            headers,
-            query,
-            remote,
-        )
-        .await
+        return match crate::handlers::json::json_handler(State(state), headers, query, remote).await
         {
             Ok(resp) => resp.into_response(),
             Err(e) => e.into_response(),
@@ -140,14 +135,7 @@ async fn root_handler(
     }
 
     if user_agent::is_cli(ua) || accept.contains("text/plain") {
-        return match crate::handlers::cli::ip_handler(
-            State(state),
-            headers,
-            query,
-            remote,
-        )
-        .await
-        {
+        return match crate::handlers::cli::ip_handler(State(state), headers, query, remote).await {
             Ok(resp) => resp.into_response(),
             Err(e) => e.into_response(),
         };
@@ -155,13 +143,7 @@ async fn root_handler(
 
     // Default: if template is configured, serve HTML; otherwise show IP
     if state.tera.is_some() {
-        return match crate::handlers::html::html_handler(
-            State(state),
-            headers,
-            query,
-            remote,
-        )
-        .await
+        return match crate::handlers::html::html_handler(State(state), headers, query, remote).await
         {
             Ok(resp) => resp.into_response(),
             Err(e) => e.into_response(),
@@ -225,7 +207,7 @@ pub fn build_router(state: AppState) -> Router {
     // Fallback
     app = app.fallback(not_found_handler);
 
-    app.with_state(state)
+    app.layer(TraceLayer::new_for_http()).with_state(state)
 }
 
 async fn health_handler() -> impl IntoResponse {
@@ -247,7 +229,7 @@ async fn not_found_handler(headers: HeaderMap) -> impl IntoResponse {
 
     if accept.contains("application/json") {
         AppError::not_found("404 page not found")
-            .as_json()
+            .into_json()
             .into_response()
     } else {
         AppError::not_found("404 page not found").into_response()

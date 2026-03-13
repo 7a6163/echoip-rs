@@ -4,14 +4,12 @@ use axum::response::IntoResponse;
 use crate::error::AppError;
 use crate::server::AppState;
 
-pub async fn cache_handler(
-    State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn cache_handler(State(state): State<AppState>) -> Result<impl IntoResponse, AppError> {
     let cache = state.cache.read().await;
     let stats = cache.stats();
 
     let body = serde_json::to_string_pretty(&stats)
-        .map_err(|e| AppError::internal(e.to_string()).as_json())?;
+        .map_err(|e| AppError::internal(e.to_string()).into_json())?;
 
     Ok((
         [(
@@ -26,10 +24,9 @@ pub async fn cache_resize_handler(
     State(state): State<AppState>,
     body: String,
 ) -> Result<impl IntoResponse, AppError> {
-    let capacity: usize = body
-        .trim()
-        .parse()
-        .map_err(|_| AppError::bad_request(format!("invalid capacity: {}", body.trim())).as_json())?;
+    let capacity: usize = body.trim().parse().map_err(|_| {
+        AppError::bad_request(format!("invalid capacity: {}", body.trim())).into_json()
+    })?;
 
     {
         let mut cache = state.cache.write().await;
@@ -41,7 +38,7 @@ pub async fn cache_resize_handler(
     });
 
     let body = serde_json::to_string_pretty(&resp)
-        .map_err(|e| AppError::internal(e.to_string()).as_json())?;
+        .map_err(|e| AppError::internal(e.to_string()).into_json())?;
 
     Ok((
         [(

@@ -24,16 +24,25 @@ pub enum MaxmindAuth {
     LegacyKey(String),
     /// New API: HTTP Basic Auth with account ID + license key
     /// Env: `MAXMIND_ACCOUNT_ID` + `MAXMIND_LICENSE_KEY`
-    BasicAuth { account_id: String, license_key: String },
+    BasicAuth {
+        account_id: String,
+        license_key: String,
+    },
 }
 
 impl MaxmindAuth {
     /// Detect authentication from environment variables.
     /// Prefers new API (MAXMIND_ACCOUNT_ID + MAXMIND_LICENSE_KEY) over legacy (GEOIP_LICENSE_KEY).
     pub fn from_env() -> Option<Self> {
-        let account_id = std::env::var("MAXMIND_ACCOUNT_ID").ok().filter(|s| !s.is_empty());
-        let new_key = std::env::var("MAXMIND_LICENSE_KEY").ok().filter(|s| !s.is_empty());
-        let legacy_key = std::env::var("GEOIP_LICENSE_KEY").ok().filter(|s| !s.is_empty());
+        let account_id = std::env::var("MAXMIND_ACCOUNT_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let new_key = std::env::var("MAXMIND_LICENSE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let legacy_key = std::env::var("GEOIP_LICENSE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         if let (Some(id), Some(key)) = (account_id, new_key) {
             Some(MaxmindAuth::BasicAuth {
@@ -104,10 +113,7 @@ impl DbUpdater {
         result
     }
 
-    async fn download_maxmind(
-        &self,
-        edition_id: &str,
-    ) -> Result<PathBuf, DbUpdateError> {
+    async fn download_maxmind(&self, edition_id: &str) -> Result<PathBuf, DbUpdateError> {
         let auth = self.auth.as_ref().ok_or_else(|| {
             DbUpdateError::Validation("No MaxMind credentials configured".to_string())
         })?;
@@ -115,12 +121,17 @@ impl DbUpdater {
         info!("Downloading {edition_id}...");
 
         let req = match auth {
-            MaxmindAuth::BasicAuth { account_id, license_key } => {
+            MaxmindAuth::BasicAuth {
+                account_id,
+                license_key,
+            } => {
                 // New API: Basic Auth + new endpoint
                 let url = format!(
                     "https://download.maxmind.com/geoip/databases/{edition_id}/download?suffix=tar.gz"
                 );
-                self.client.get(&url).basic_auth(account_id, Some(license_key))
+                self.client
+                    .get(&url)
+                    .basic_auth(account_id, Some(license_key))
             }
             MaxmindAuth::LegacyKey(key) => {
                 // Legacy API: license key in query parameter
@@ -232,10 +243,10 @@ pub fn build_provider(
     asn_path: Option<&str>,
     ip66_path: Option<&str>,
 ) -> Box<dyn crate::geo::GeoProvider> {
+    use crate::geo::GeoProvider;
     use crate::geo::composite::CompositeProvider;
     use crate::geo::ip66::Ip66Provider;
     use crate::geo::maxmind::MaxmindProvider;
-    use crate::geo::GeoProvider;
 
     let mut providers: Vec<Box<dyn GeoProvider>> = Vec::new();
 
@@ -276,14 +287,9 @@ pub fn build_provider(
 }
 
 /// Resolve effective DB paths: CLI flags take priority over auto-downloaded paths.
-pub fn resolve_paths(
-    cli_path: &str,
-    downloaded: &Option<PathBuf>,
-) -> Option<String> {
+pub fn resolve_paths(cli_path: &str, downloaded: &Option<PathBuf>) -> Option<String> {
     if !cli_path.is_empty() {
         return Some(cli_path.to_string());
     }
-    downloaded
-        .as_ref()
-        .map(|p| p.to_string_lossy().to_string())
+    downloaded.as_ref().map(|p| p.to_string_lossy().to_string())
 }

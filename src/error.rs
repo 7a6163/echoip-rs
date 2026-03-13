@@ -39,8 +39,7 @@ impl AppError {
         }
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_json(mut self) -> Self {
+    pub fn into_json(mut self) -> Self {
         self.content_type = Some("application/json".to_string());
         self
     }
@@ -68,5 +67,38 @@ impl IntoResponse for AppError {
             body,
         )
             .into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bad_request() {
+        let err = AppError::bad_request("test error");
+        assert_eq!(err.code, StatusCode::BAD_REQUEST);
+        assert_eq!(err.message, "test error");
+        assert!(err.content_type.is_none());
+    }
+
+    #[test]
+    fn test_not_found() {
+        let err = AppError::not_found("not found");
+        assert_eq!(err.code, StatusCode::NOT_FOUND);
+        assert_eq!(err.message, "not found");
+    }
+
+    #[test]
+    fn test_internal() {
+        let err = AppError::internal("server error");
+        assert_eq!(err.code, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "server error");
+    }
+
+    #[test]
+    fn test_into_json() {
+        let err = AppError::bad_request("test").into_json();
+        assert_eq!(err.content_type.as_deref(), Some("application/json"));
     }
 }

@@ -16,6 +16,8 @@ WORKDIR /opt/echoip
 
 COPY --from=builder /build/target/release/echoip ./echoip
 COPY html/ html/
+RUN mkdir -p /opt/echoip/data
+VOLUME ["/opt/echoip/data"]
 
 EXPOSE 8080
 

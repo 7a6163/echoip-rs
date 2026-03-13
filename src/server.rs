@@ -125,7 +125,7 @@ async fn root_handler(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if accept == "application/json" {
+    if accept.contains("application/json") {
         return match crate::handlers::json::json_handler(
             State(state),
             headers,
@@ -139,7 +139,7 @@ async fn root_handler(
         };
     }
 
-    if user_agent::is_cli(ua) || accept == "text/plain" {
+    if user_agent::is_cli(ua) || accept.contains("text/plain") {
         return match crate::handlers::cli::ip_handler(
             State(state),
             headers,
@@ -190,7 +190,8 @@ pub fn build_router(state: AppState) -> Router {
     // CLI endpoints
     app = app.route("/ip", get(crate::handlers::cli::ip_handler));
 
-    if !state.geo.is_empty() {
+    // Always register geo routes — databases may be loaded later via auto-download
+    if !state.geo.is_empty() || !state.config.no_auto_download {
         app = app
             .route("/country", get(crate::handlers::cli::country_handler))
             .route(
@@ -204,11 +205,6 @@ pub fn build_router(state: AppState) -> Router {
             )
             .route("/asn", get(crate::handlers::cli::asn_handler))
             .route("/asn-org", get(crate::handlers::cli::asn_org_handler));
-    }
-
-    // HTML handler (internal, called from root_handler)
-    if state.tera.is_some() {
-        app = app.route("/_html", get(crate::handlers::html::html_handler));
     }
 
     // Port testing
@@ -249,7 +245,7 @@ async fn not_found_handler(headers: HeaderMap) -> impl IntoResponse {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if accept == "application/json" {
+    if accept.contains("application/json") {
         AppError::not_found("404 page not found")
             .as_json()
             .into_response()

@@ -13,11 +13,7 @@ pub fn to_decimal(ip: IpAddr) -> BigUint {
 }
 
 pub async fn lookup_addr(ip: IpAddr) -> Option<String> {
-    let ip_str = ip.to_string();
-    let result = tokio::task::spawn_blocking(move || {
-        dns_lookup::lookup_addr(&ip_str.parse().unwrap())
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || dns_lookup::lookup_addr(&ip)).await;
 
     match result {
         Ok(Ok(hostname)) => {

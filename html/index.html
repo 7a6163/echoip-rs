@@ -2,191 +2,103 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>What is my IP address? &mdash; {{ Host }}</title>
+    <title>{{ Host }} &mdash; IP Lookup</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta
-      name="description"
-      content="{{ Host }} &mdash; What is my IP address?"
-    >
-    <link rel="canonical" href="https://ifconfig.co/">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    >
+    <meta name="description" content="Find your public IP address, geolocation, and network information.">
     {% include "styles.html" %}
   </head>
   <body>
-    <div class="container">
+    <div class="topbar"></div>
+    <div class="wrap">
 
-      <!-- Hero -->
-      <header class="section hero">
-        {% if Sponsor %}
-        <div class="sponsor-logo">
-          <a href="https://www.leaf.cloud?utm_source=ifconfig" aria-label="Leafcloud">
-            <span>Hosted by Leafcloud</span>
-          </a>
+      <nav class="header">
+        <div class="header-title"><span>&gt;</span> curl {{ Host }}</div>
+        <div class="header-links">
+          <a href="#details">Details</a>
+          <a href="#api">API</a>
+          <a href="#faq">FAQ</a>
         </div>
-        {% endif %}
-        <h1 class="site-title">&#10095; curl {{ Host }}</h1>
-        <form class="ip-form" action="/" method="GET">
-          <input class="ip-input" type="text" name="ip" value="{{ IP }}">
-          <div class="ip-buttons">
-            <button class="ip-button" type="submit">Lookup IP address</button>
-            {% if ExplicitLookup %}
-            <a class="ip-button ip-button-secondary" href="/">Show my IP address</a>
-            {% endif %}
-          </div>
+      </nav>
+
+      <!-- Lookup -->
+      <div class="lookup-card">
+        <div class="lookup-label">Your IP Address</div>
+        <form class="lookup-form" action="/" method="GET">
+          <input class="lookup-input" type="text" name="ip" value="{{ IP }}">
+          <button class="lookup-btn" type="submit">Lookup</button>
+          {% if ExplicitLookup %}
+          <a class="lookup-btn lookup-btn-outline" href="/">Reset</a>
+          {% endif %}
         </form>
-        <p class="ip-meta">
+        <p class="lookup-summary">
           {%- if City %}{{ City }}{% if Country %}, {% endif %}{% endif -%}
           {{- Country -}}
-          {%- if ASNOrg %}{%- if City or Country %} &middot; {% endif %}{{ ASNOrg }}{% endif -%}
+          {%- if CountryISO %} <span class="badge">{{ CountryISO }}</span>{% endif -%}
+          {%- if ASNOrg %} &middot; {{ ASNOrg }}{% endif -%}
         </p>
-      </header>
+      </div>
 
       <!-- Details -->
-      <section class="section" id="details">
-        <div class="details-grid">
-          <div>
-            <h2>Additional information</h2>
-            <table class="info-table">
+      <div class="columns" id="details">
+        <div class="card">
+          <div class="card-head">Network &amp; Location</div>
+          <div class="card-body">
+            <table class="kv">
               <tbody>
-                <tr>
-                  <th>IP address</th>
-                  <td>{{ IP }}</td>
-                </tr>
-                <tr>
-                  <th>Decimal</th>
-                  <td>{{ IPDecimal }}</td>
-                </tr>
-                {% if Country %}
-                <tr>
-                  <th>Country</th>
-                  <td>{{ Country }}</td>
-                </tr>
-                {% endif %}
-                {% if CountryISO %}
-                <tr>
-                  <th>Country (ISO)</th>
-                  <td>{{ CountryISO }}</td>
-                </tr>
-                {% endif %}
-                {% if CountryEU %}
-                <tr>
-                  <th>EU member</th>
-                  <td>{{ CountryEU }}</td>
-                </tr>
-                {% endif %}
-                {% if RegionName %}
-                <tr>
-                  <th>Region</th>
-                  <td>{{ RegionName }}</td>
-                </tr>
-                {% endif %}
-                {% if RegionCode %}
-                <tr>
-                  <th>Region code</th>
-                  <td>{{ RegionCode }}</td>
-                </tr>
-                {% endif %}
-                {% if MetroCode %}
-                <tr>
-                  <th>Metro code</th>
-                  <td>{{ MetroCode }}</td>
-                </tr>
-                {% endif %}
-                {% if PostalCode %}
-                <tr>
-                  <th>Postal code</th>
-                  <td>{{ PostalCode }}</td>
-                </tr>
-                {% endif %}
-                {% if City %}
-                <tr>
-                  <th>City</th>
-                  <td>{{ City }}</td>
-                </tr>
-                {% endif %}
-                {% if Latitude %}
-                <tr>
-                  <th>Latitude</th>
-                  <td>{{ Latitude }}</td>
-                </tr>
-                {% endif %}
-                {% if Longitude %}
-                <tr>
-                  <th>Longitude</th>
-                  <td>{{ Longitude }}</td>
-                </tr>
-                {% endif %}
-                {% if Timezone %}
-                <tr>
-                  <th>Timezone</th>
-                  <td>{{ Timezone }}</td>
-                </tr>
-                {% endif %}
-                {% if ASN %}
-                <tr>
-                  <th>ASN</th>
-                  <td>{{ ASN }}</td>
-                </tr>
-                {% endif %}
-                {% if ASNOrg %}
-                <tr>
-                  <th>Organization</th>
-                  <td>{{ ASNOrg }}</td>
-                </tr>
-                {% endif %}
-                {% if Hostname %}
-                <tr>
-                  <th>Hostname</th>
-                  <td>{{ Hostname }}</td>
-                </tr>
-                {% endif %}
+                <tr><th>IP</th><td>{{ IP }}</td></tr>
+                <tr><th>Decimal</th><td>{{ IPDecimal }}</td></tr>
+                {% if Hostname %}<tr><th>Hostname</th><td>{{ Hostname }}</td></tr>{% endif %}
+                {% if ASN %}<tr><th>ASN</th><td>{{ ASN }}</td></tr>{% endif %}
+                {% if ASNOrg %}<tr><th>Organization</th><td>{{ ASNOrg }}</td></tr>{% endif %}
+                {% if Country %}<tr><th>Country</th><td>{{ Country }}</td></tr>{% endif %}
+                {% if CountryISO %}<tr><th>Country ISO</th><td>{{ CountryISO }}</td></tr>{% endif %}
+                {% if CountryEU %}<tr><th>EU Member</th><td>{{ CountryEU }}</td></tr>{% endif %}
+                {% if RegionName %}<tr><th>Region</th><td>{{ RegionName }}</td></tr>{% endif %}
+                {% if RegionCode %}<tr><th>Region Code</th><td>{{ RegionCode }}</td></tr>{% endif %}
+                {% if City %}<tr><th>City</th><td>{{ City }}</td></tr>{% endif %}
+                {% if PostalCode %}<tr><th>Postal Code</th><td>{{ PostalCode }}</td></tr>{% endif %}
+                {% if MetroCode %}<tr><th>Metro Code</th><td>{{ MetroCode }}</td></tr>{% endif %}
+                {% if Latitude %}<tr><th>Latitude</th><td>{{ Latitude }}</td></tr>{% endif %}
+                {% if Longitude %}<tr><th>Longitude</th><td>{{ Longitude }}</td></tr>{% endif %}
+                {% if Timezone %}<tr><th>Timezone</th><td>{{ Timezone }}</td></tr>{% endif %}
               </tbody>
             </table>
           </div>
-          <div>
-            <h2>Location</h2>
-            {% if Latitude %}
-            <div class="map-wrapper">
-              <iframe
-                width="100%"
-                height="300"
-                frameborder="0"
-                scrolling="no"
-                src="https://www.openstreetmap.org/export/embed.html?bbox={{ BoxLonLeft }}%2C{{ BoxLatBottom }}%2C{{ BoxLonRight }}%2C{{ BoxLatTop }}&amp;layer=mapnik&amp;marker={{ Latitude }}%2C{{ Longitude }}"
-              ></iframe>
-            </div>
-            {% else %}
-            <p><em>No coordinates available for this IP address.</em></p>
-            {% endif %}
-            {% if Country %}
-            <p class="attribution">
-              {% if Latitude %}Approximate location based on IP address.{% endif %}
-              IP geolocation data is provided by <a href="https://www.maxmind.com">MaxMind GeoLite2</a>
-              and <a href="https://ip66.dev">ip66.dev</a>.
-            </p>
-            {% endif %}
-          </div>
         </div>
-      </section>
+
+        <div class="card">
+          <div class="card-head">Map</div>
+          {% if Latitude %}
+          <div class="map-frame">
+            <iframe
+              width="100%"
+              height="280"
+              scrolling="no"
+              src="https://www.openstreetmap.org/export/embed.html?bbox={{ BoxLonLeft }}%2C{{ BoxLatBottom }}%2C{{ BoxLonRight }}%2C{{ BoxLatTop }}&amp;layer=mapnik&amp;marker={{ Latitude }}%2C{{ Longitude }}"
+            ></iframe>
+          </div>
+          <p class="map-note">
+            Approximate location. Data by
+            <a href="https://www.maxmind.com">MaxMind</a> /
+            <a href="https://ip66.dev">ip66.dev</a>.
+          </p>
+          {% else %}
+          <div class="card-body">
+            <p style="color: var(--text-dim); font-size: 0.875rem;">No coordinates available for this address.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
 
       <!-- API -->
-      <section class="section" id="api">
+      <section class="api-section" id="api">
         <h2>API</h2>
-        <p>All data is available programmatically. When using <code>curl</code>, pass the <code>-s</code> flag to hide the progress bar.</p>
+        <p>All endpoints are available programmatically. Use <code>curl -s</code> to suppress the progress bar.</p>
+
         <h3>Plain text</h3>
-        <p>These endpoints return plain text by default, with a trailing newline
-          at the end.</p>
         <table class="api-table">
           <thead>
-            <tr>
-              <th>Command</th>
-              <th>Response</th>
-            </tr>
+            <tr><th>Command</th><th>Response</th></tr>
           </thead>
           <tbody>
             <tr>
@@ -219,77 +131,74 @@
             {% endif %}
           </tbody>
         </table>
-        <div class="note">
+
+        <div class="hint-box">
           <ul>
-            <li>Set the <code>Accept: application/json</code> header to request response as JSON.</li>
-            <li>Append <code>?ip=IP</code> to the request URL to lookup information for a different IP. This is not supported for the <code>/port</code> endpoint.</li>
+            <li>Set <code>Accept: application/json</code> header for JSON responses.</li>
+            <li>Append <code>?ip=ADDRESS</code> to look up a different IP. Not supported on <code>/port</code>.</li>
           </ul>
         </div>
+
         <h3>JSON</h3>
-        <p>These endpoints always return JSON.</p>
         <table class="api-table">
           <thead>
-            <tr>
-              <th>Command</th>
-              <th>Description</th>
-            </tr>
+            <tr><th>Command</th><th>Description</th></tr>
           </thead>
           <tbody>
             <tr>
               <td><code>curl {{ Host }}/json{% if ExplicitLookup %}?ip={{ IP }}{% endif %}</code></td>
-              <td>Retrieve all IP information. See <a href="#response">response</a>.</td>
+              <td>Full IP information</td>
             </tr>
             {% if Port %}
             <tr>
               <td><code>curl {{ Host }}/port/&lt;PORT&gt;</code></td>
-              <td>Check if given port is reachable. See <a href="#port-response">port response</a>.</td>
+              <td>Port reachability check</td>
             </tr>
             {% endif %}
           </tbody>
         </table>
-        <h3 id="response">Response</h3>
-        <pre class="json-block"><code>{{ JSON }}</code></pre>
+
+        <h3 id="response">Example response</h3>
+        <pre class="json-pre"><code>{{ JSON | safe }}</code></pre>
+
+        {% if Port %}
         <h3 id="port-response">Port response</h3>
-        <p>This is an example response. The actual result depends on the reachability of the queried port.</p>
-        <pre class="json-block"><code>{
+        <pre class="json-pre"><code>{
   "ip": "{{ IP }}",
   "port": 443,
   "reachable": false
-}
-</code></pre>
+}</code></pre>
+        {% endif %}
       </section>
 
       <!-- FAQ -->
-      <section class="section" id="faq">
+      <section class="faq" id="faq">
         <h2>FAQ</h2>
-        <dl class="faq-list">
-          <dt>How do I force IPv4 or IPv6 lookup?</dt>
-          <dd>
-            Pass the appropriate flag to your client, e.g.
-            <code>curl -4</code> or <code>curl -6</code>.
-          </dd>
-
-          <dt>Is automated use permitted?</dt>
-          <dd>
-            Yes, but please limit automated requests to
-            <strong>1 request per minute</strong>. Requests exceeding this limit
-            may receive a 429 status code or be dropped entirely.
-          </dd>
-
-          <dt>Can I run my own instance?</dt>
-          <dd>
-            Yes. The source code and documentation are available on
-            <a href="https://github.com/mpolden/echoip">GitHub</a>.
-          </dd>
-        </dl>
+        <details>
+          <summary>How do I force IPv4 or IPv6?</summary>
+          <div class="faq-answer">
+            Pass <code>-4</code> or <code>-6</code> to your client, e.g. <code>curl -4 {{ Host }}</code>.
+          </div>
+        </details>
+        <details>
+          <summary>Is automated use allowed?</summary>
+          <div class="faq-answer">
+            Yes, but please be reasonable with request frequency.
+          </div>
+        </details>
+        <details>
+          <summary>Can I run my own instance?</summary>
+          <div class="faq-answer">
+            Yes. Source code is available on <a href="https://github.com/7a6163/echoip-rs">GitHub</a>.
+          </div>
+        </details>
       </section>
 
-      <!-- Footer -->
-      <footer class="section footer">
+      <footer class="site-footer">
         <p>
-          Created by <a href="https://mpolden.no/blog">mpolden</a> and licensed
-          under the BSD 3-Clause license. Source code is available
-          on <a href="https://github.com/mpolden/echoip">GitHub.</a>
+          Powered by <a href="https://github.com/7a6163/echoip-rs">echoip</a>.
+          Based on <a href="https://github.com/mpolden/echoip">mpolden/echoip</a>.
+          Licensed under BSD 3-Clause.
         </p>
       </footer>
 

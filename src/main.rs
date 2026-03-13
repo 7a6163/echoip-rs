@@ -7,10 +7,8 @@ use tracing::info;
 
 use echoip::cache::Cache;
 use echoip::config::Config;
-use echoip::geo::composite::CompositeProvider;
-use echoip::geo::ip66::Ip66Provider;
-use echoip::geo::maxmind::MaxmindProvider;
-use echoip::geo::GeoProvider;
+use echoip::db_updater::{self, DbUpdater};
+use echoip::geo::SwappableGeoProvider;
 use echoip::server::{build_router, AppState};
 
 #[tokio::main]
@@ -18,55 +16,48 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let config = Config::parse();
+    let license_key = std::env::var("GEOIP_LICENSE_KEY").ok().filter(|k| !k.is_empty());
 
-    // Build geo providers
-    let mut providers: Vec<Box<dyn GeoProvider>> = Vec::new();
-
-    // MaxMind provider (if any DB paths are specified)
-    let country_db = if config.country_db.is_empty() {
+    // Auto-download databases on startup
+    let download_result = if !config.no_auto_download && license_key.is_some() {
+        let updater = DbUpdater::new(config.data_dir.clone().into(), license_key.clone());
+        info!("Auto-downloading GeoIP databases to {}", config.data_dir);
+        Some(updater.download_all().await)
+    } else if !config.no_auto_download {
+        // No license key: only download ip66
+        let updater = DbUpdater::new(config.data_dir.clone().into(), None);
+        info!("Auto-downloading ip66 database to {}", config.data_dir);
+        Some(updater.download_all().await)
+    } else {
         None
-    } else {
-        Some(config.country_db.as_str())
-    };
-    let city_db = if config.city_db.is_empty() {
-        None
-    } else {
-        Some(config.city_db.as_str())
-    };
-    let asn_db = if config.asn_db.is_empty() {
-        None
-    } else {
-        Some(config.asn_db.as_str())
     };
 
-    if country_db.is_some() || city_db.is_some() || asn_db.is_some() {
-        match MaxmindProvider::open(country_db, city_db, asn_db) {
-            Ok(provider) => {
-                info!("Loaded MaxMind GeoIP databases");
-                providers.push(Box::new(provider));
-            }
-            Err(e) => {
-                tracing::error!("Failed to open MaxMind databases: {e}");
-                std::process::exit(1);
-            }
-        }
-    }
+    // Resolve effective paths: CLI flags > auto-downloaded > none
+    let country_path = db_updater::resolve_paths(
+        &config.country_db,
+        &download_result.as_ref().and_then(|r| r.country_path.clone()),
+    );
+    let city_path = db_updater::resolve_paths(
+        &config.city_db,
+        &download_result.as_ref().and_then(|r| r.city_path.clone()),
+    );
+    let asn_path = db_updater::resolve_paths(
+        &config.asn_db,
+        &download_result.as_ref().and_then(|r| r.asn_path.clone()),
+    );
+    let ip66_path = db_updater::resolve_paths(
+        config.ip66_db.as_deref().unwrap_or(""),
+        &download_result.as_ref().and_then(|r| r.ip66_path.clone()),
+    );
 
-    // ip66.dev provider
-    if config.ip66 {
-        info!("Enabling ip66.dev geo provider");
-        providers.push(Box::new(Ip66Provider::new(config.ip66_url.clone())));
-    }
+    let provider = db_updater::build_provider(
+        country_path.as_deref(),
+        city_path.as_deref(),
+        asn_path.as_deref(),
+        ip66_path.as_deref(),
+    );
 
-    let geo: Arc<dyn GeoProvider> = if providers.is_empty() {
-        // Empty provider that returns nothing
-        Arc::new(MaxmindProvider::open(None, None, None).unwrap())
-    } else if providers.len() == 1 {
-        Arc::from(providers.into_iter().next().unwrap())
-    } else {
-        Arc::new(CompositeProvider::new(providers))
-    };
-
+    let geo = Arc::new(SwappableGeoProvider::new(provider));
     let cache = Arc::new(RwLock::new(Cache::new(config.cache_size)));
 
     // Load templates
@@ -114,10 +105,64 @@ async fn main() {
 
     let state = AppState {
         config: Arc::new(config.clone()),
-        geo,
-        cache,
+        geo: geo.clone(),
+        cache: cache.clone(),
         tera,
     };
+
+    // Spawn periodic updater
+    if config.update_interval > 0 {
+        let interval_hours = config.update_interval;
+        let data_dir = config.data_dir.clone();
+        let geo_for_updater = geo.clone();
+        let cache_for_updater = cache.clone();
+        let config_for_updater = config.clone();
+
+        info!("Periodic database update every {interval_hours}h");
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(interval_hours * 3600)).await;
+                info!("Starting periodic database update...");
+
+                let updater = DbUpdater::new(data_dir.clone().into(), license_key.clone());
+                let result = updater.download_all().await;
+
+                let cp = db_updater::resolve_paths(
+                    &config_for_updater.country_db,
+                    &result.country_path,
+                );
+                let cip = db_updater::resolve_paths(
+                    &config_for_updater.city_db,
+                    &result.city_path,
+                );
+                let ap = db_updater::resolve_paths(
+                    &config_for_updater.asn_db,
+                    &result.asn_path,
+                );
+                let ip = db_updater::resolve_paths(
+                    config_for_updater.ip66_db.as_deref().unwrap_or(""),
+                    &result.ip66_path,
+                );
+
+                let new_provider = db_updater::build_provider(
+                    cp.as_deref(),
+                    cip.as_deref(),
+                    ap.as_deref(),
+                    ip.as_deref(),
+                );
+
+                geo_for_updater.swap(new_provider);
+                info!("Geo provider hot-reloaded");
+
+                // Clear cache to avoid serving stale geo data
+                {
+                    let mut c = cache_for_updater.write().await;
+                    *c = Cache::new(c.capacity());
+                }
+                info!("Cache cleared after database update");
+            }
+        });
+    }
 
     let app = build_router(state);
 

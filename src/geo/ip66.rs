@@ -1,131 +1,109 @@
 use std::net::IpAddr;
+use std::path::Path;
 use std::sync::Arc;
 
-use reqwest::Client;
+use maxminddb::Reader;
 use serde::Deserialize;
-use tokio::sync::RwLock;
 
 use super::{Asn, City, Country, GeoProvider};
 
-#[derive(Debug, Deserialize, Clone, Default)]
-struct Ip66Response {
-    #[serde(default)]
-    country: String,
-    #[serde(default)]
-    country_code: String,
-    #[serde(default)]
-    city: String,
-    #[serde(default)]
-    latitude: f64,
-    #[serde(default)]
-    longitude: f64,
-    #[serde(default)]
-    asn: u32,
-    #[serde(default)]
-    as_org: String,
-    #[serde(default)]
-    timezone: String,
-    #[serde(default)]
-    zip_code: String,
-    #[serde(default)]
-    region: String,
-    #[serde(default)]
-    region_code: String,
-    #[serde(default)]
-    is_eu: bool,
+#[derive(Deserialize, Debug)]
+struct Ip66CountryRecord {
+    country: Option<Ip66CountryInfo>,
+    registered_country: Option<Ip66CountryInfo>,
 }
 
-struct CachedLookup {
-    ip: IpAddr,
-    response: Ip66Response,
+#[derive(Deserialize, Debug)]
+struct Ip66CountryInfo {
+    names: Option<std::collections::BTreeMap<String, String>>,
+    iso_code: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Ip66AsnRecord {
+    autonomous_system_number: Option<u32>,
+    autonomous_system_organization: Option<String>,
 }
 
 pub struct Ip66Provider {
-    client: Client,
-    base_url: String,
-    cached: Arc<RwLock<Option<CachedLookup>>>,
+    db: Arc<Reader<Vec<u8>>>,
 }
 
 impl Ip66Provider {
-    pub fn new(base_url: Option<String>) -> Self {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()
-            .expect("failed to build HTTP client");
-
-        Self {
-            client,
-            base_url: base_url.unwrap_or_else(|| "https://ip66.dev/api".to_string()),
-            cached: Arc::new(RwLock::new(None)),
+    pub fn open(path: &str) -> Result<Self, maxminddb::MaxMindDbError> {
+        if !Path::new(path).exists() {
+            return Err(maxminddb::MaxMindDbError::invalid_database(format!(
+                "ip66 database not found: {path}"
+            )));
         }
-    }
-
-    async fn fetch(&self, ip: IpAddr) -> Option<Ip66Response> {
-        // Check cache first
-        {
-            let cached = self.cached.read().await;
-            if let Some(ref entry) = *cached
-                && entry.ip == ip {
-                    return Some(entry.response.clone());
-                }
-        }
-
-        let url = format!("{}/{}", self.base_url, ip);
-        let resp = self.client.get(&url).send().await.ok()?;
-        let data: Ip66Response = resp.json().await.ok()?;
-
-        // Cache result
-        {
-            let mut cached = self.cached.write().await;
-            *cached = Some(CachedLookup {
-                ip,
-                response: data.clone(),
-            });
-        }
-
-        Some(data)
+        let db = Reader::open_readfile(path)?;
+        Ok(Self { db: Arc::new(db) })
     }
 }
 
 #[async_trait::async_trait]
 impl GeoProvider for Ip66Provider {
     async fn country(&self, ip: IpAddr) -> Option<Country> {
-        let data = self.fetch(ip).await?;
-        if data.country.is_empty() && data.country_code.is_empty() {
+        let result = self.db.lookup(ip).ok()?;
+        let record: Ip66CountryRecord = result.decode().ok()??;
+
+        let mut name = String::new();
+        let mut iso = String::new();
+
+        if let Some(ref c) = record.country {
+            if let Some(ref names) = c.names
+                && let Some(n) = names.get("en")
+            {
+                name = n.to_string();
+            }
+            if let Some(ref code) = c.iso_code {
+                iso = code.clone();
+            }
+        }
+
+        // Fallback to registered country
+        if let Some(ref rc) = record.registered_country {
+            if name.is_empty()
+                && let Some(ref names) = rc.names
+                && let Some(n) = names.get("en")
+            {
+                name = n.to_string();
+            }
+            if iso.is_empty()
+                && let Some(ref code) = rc.iso_code
+            {
+                iso = code.clone();
+            }
+        }
+
+        if name.is_empty() && iso.is_empty() {
             return None;
         }
+
         Some(Country {
-            name: data.country,
-            iso: data.country_code,
-            is_eu: data.is_eu,
+            name,
+            iso,
+            is_eu: false,
         })
     }
 
-    async fn city(&self, ip: IpAddr) -> Option<City> {
-        let data = self.fetch(ip).await?;
-        if data.city.is_empty() && data.latitude == 0.0 && data.longitude == 0.0 {
-            return None;
-        }
-        Some(City {
-            name: data.city,
-            latitude: data.latitude,
-            longitude: data.longitude,
-            postal_code: data.zip_code,
-            timezone: data.timezone,
-            metro_code: 0,
-            region_name: data.region,
-            region_code: data.region_code,
-        })
+    async fn city(&self, _ip: IpAddr) -> Option<City> {
+        // ip66 MMDB does not include city-level data
+        None
     }
 
     async fn asn(&self, ip: IpAddr) -> Option<Asn> {
-        let data = self.fetch(ip).await?;
-        if data.asn == 0 {
+        let result = self.db.lookup(ip).ok()?;
+        let record: Ip66AsnRecord = result.decode().ok()??;
+
+        let number = record.autonomous_system_number.unwrap_or(0);
+        if number == 0 {
             return None;
         }
+
         Some(Asn {
-            number: data.asn,
-            organization: data.as_org,
+            number,
+            organization: record.autonomous_system_organization.unwrap_or_default(),
         })
     }
 

@@ -1,7 +1,7 @@
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "echoip-rs", about = "IP address lookup service")]
+#[command(name = "echoip", about = "IP address lookup service")]
 pub struct Config {
     /// Path to GeoIP country database
     #[arg(short = 'f', long = "country-db", default_value = "")]
@@ -47,13 +47,21 @@ pub struct Config {
     #[arg(short = 'H', long = "trusted-header")]
     pub trusted_headers: Vec<String>,
 
-    /// Enable ip66.dev as geo provider
-    #[arg(long = "ip66")]
-    pub ip66: bool,
+    /// Path to ip66.dev MMDB database
+    #[arg(long = "ip66-db")]
+    pub ip66_db: Option<String>,
 
-    /// Custom ip66.dev API base URL
-    #[arg(long = "ip66-url")]
-    pub ip66_url: Option<String>,
+    /// Directory for auto-downloaded databases
+    #[arg(short = 'd', long = "data-dir", default_value = "data")]
+    pub data_dir: String,
+
+    /// Auto-update interval in hours (0 to disable periodic updates)
+    #[arg(long = "update-interval", default_value_t = 0)]
+    pub update_interval: u64,
+
+    /// Disable automatic database download on startup
+    #[arg(long = "no-auto-download")]
+    pub no_auto_download: bool,
 }
 
 impl Config {

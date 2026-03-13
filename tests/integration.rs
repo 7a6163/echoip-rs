@@ -80,8 +80,10 @@ mod helpers {
             profile: false,
             sponsor: false,
             trusted_headers: vec![],
-            ip66: false,
-            ip66_url: None,
+            ip66_db: None,
+            data_dir: "data".into(),
+            update_interval: 0,
+            no_auto_download: true,
         }
     }
 

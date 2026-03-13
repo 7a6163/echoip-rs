@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod config;
+pub mod db_updater;
 pub mod error;
 pub mod geo;
 pub mod handlers;

@@ -11,11 +11,12 @@ fn serialize_ip<S: Serializer>(ip: &IpAddr, s: S) -> Result<S::Ok, S::Error> {
 }
 
 fn serialize_decimal<S: Serializer>(val: &BigUint, s: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::Error;
-    // Serialize as number if it fits in u64, otherwise as string
+    // Serialize as number if it fits in u64 (IPv4), otherwise as string (IPv6)
     let num_str = val.to_string();
-    let n: u64 = num_str.parse().map_err(Error::custom)?;
-    s.serialize_u64(n)
+    match num_str.parse::<u64>() {
+        Ok(n) => s.serialize_u64(n),
+        Err(_) => s.serialize_str(&num_str),
+    }
 }
 
 fn is_false(v: &bool) -> bool {

@@ -91,6 +91,10 @@ impl Cache {
         self.evictions = 0;
     }
 
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             size: self.entries.len(),

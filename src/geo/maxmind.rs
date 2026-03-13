@@ -209,6 +209,6 @@ impl GeoProvider for MaxmindProvider {
     }
 
     fn is_empty(&self) -> bool {
-        self.country_db.is_none() && self.city_db.is_none()
+        self.country_db.is_none() && self.city_db.is_none() && self.asn_db.is_none()
     }
 }

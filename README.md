@@ -64,6 +64,8 @@ Pass `-4` or `-6` to your client to switch between IPv4 and IPv6 lookup.
 - Port reachability testing
 - Custom IP lookup via `?ip=` query parameter (all endpoints except `/port`)
 - LRU response cache
+- Auto-download databases on startup via `GEOIP_LICENSE_KEY` env var
+- Periodic database updates with hot-reload (no restart needed)
 - HTML interface with OpenStreetMap and dark/light theme
 - Docker support
 
@@ -90,19 +92,33 @@ docker run -p 8080:8080 echoip
 
 ## Geolocation Data
 
-### MaxMind GeoIP2
+### Automatic Download (Recommended)
 
-Download the MaxMind GeoLite2 databases:
+Set the `GEOIP_LICENSE_KEY` environment variable and databases will be downloaded automatically on startup:
 
 ```
-GEOIP_LICENSE_KEY=<key> make geoip-download
+GEOIP_LICENSE_KEY=<key> echoip -r -p
 ```
 
-Requires a [MaxMind account and license key](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data).
+This downloads MaxMind GeoLite2 (Country, City, ASN) and ip66.dev databases to `data/`. ip66.dev requires no key and is always downloaded.
 
-### ip66.dev
+For periodic updates (e.g. every 24 hours):
 
-No setup required. Enable with the `--ip66` flag. Optionally set a custom API URL with `--ip66-url`.
+```
+GEOIP_LICENSE_KEY=<key> echoip -r -p --update-interval 24
+```
+
+Databases are hot-reloaded without restarting the server.
+
+### Manual Download
+
+ip66.dev (free, no account):
+
+```
+curl -LO https://downloads.ip66.dev/db/ip66.mmdb
+```
+
+MaxMind GeoLite2 requires a [MaxMind account and license key](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data).
 
 ## CLI Options
 
@@ -122,29 +138,37 @@ Options:
   -P, --profile                          Enable profiling/debug handlers
   -s, --sponsor                          Show sponsor logo
   -H, --trusted-header <TRUSTED_HEADER>  Headers to trust for remote IP (repeatable)
-      --ip66                             Enable ip66.dev as geo provider
-      --ip66-url <IP66_URL>              Custom ip66.dev API base URL
+      --ip66-db <IP66_DB>                Path to ip66.dev MMDB database
+  -d, --data-dir <DATA_DIR>              Directory for auto-downloaded databases [default: data]
+      --update-interval <HOURS>          Auto-update interval in hours (0 to disable) [default: 0]
+      --no-auto-download                 Disable automatic database download on startup
   -h, --help                             Print help
 ```
 
 ## Examples
 
-Using MaxMind only:
+Auto-download and start (simplest):
 
 ```
-echoip -f GeoLite2-Country.mmdb -c GeoLite2-City.mmdb -a GeoLite2-ASN.mmdb -r -p
+GEOIP_LICENSE_KEY=<key> echoip -r -p
 ```
 
-Using ip66.dev only (no local databases needed):
+Auto-download with periodic updates every 24 hours:
 
 ```
-echoip --ip66 -r -p
+GEOIP_LICENSE_KEY=<key> echoip -r -p --update-interval 24
 ```
 
-Using both (MaxMind primary, ip66.dev fallback):
+Manual database paths:
 
 ```
-echoip -f GeoLite2-Country.mmdb -c GeoLite2-City.mmdb -a GeoLite2-ASN.mmdb --ip66 -r -p
+echoip -f GeoLite2-Country.mmdb -c GeoLite2-City.mmdb -a GeoLite2-ASN.mmdb --ip66-db ip66.mmdb -r -p --no-auto-download
+```
+
+ip66.dev only (no MaxMind key needed):
+
+```
+echoip --ip66-db ip66.mmdb -r -p --no-auto-download
 ```
 
 ## License

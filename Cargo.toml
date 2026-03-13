@@ -1,7 +1,12 @@
 [package]
 name = "echoip"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
+description = "A simple service for looking up your IP address with geolocation"
+license = "BSD-3-Clause"
+repository = "https://github.com/7a6163/echoip-rs"
+keywords = ["ip", "geolocation", "geoip", "maxmind"]
+categories = ["web-programming::http-server"]
 
 [[bin]]
 name = "echoip"
@@ -19,6 +24,7 @@ clap = { version = "4", features = ["derive", "env"] }
 dns-lookup = "3"
 flate2 = "1"
 fnv = "1"
+lru = "0.12"
 maxminddb = "0.27"
 num-bigint = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

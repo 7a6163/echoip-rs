@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.0] - 2026-03-13
+
+### Changed
+
+- Remove `async_trait` dependency — use native async traits (Rust 2024 edition)
+- Remove `fnv` dependency — use `IpAddr` directly as LRU cache key
+- GeoIP lookups changed from async to sync (MMDB reads are memory-mapped, no async needed)
+- Rename `as_json()` to `into_json()` for idiomatic Rust naming
+- Extract `attach_user_agent()` helper to reduce code duplication
+- `--cache-size 0` now truly disables caching (was silently creating capacity=1)
+- Cache `get()` uses write lock for proper LRU access tracking
+
+### Added
+
+- Graceful shutdown on SIGTERM/SIGINT (Docker-friendly)
+- HTTP request tracing via `TraceLayer`
+- DNS reverse lookup timeout (3 seconds)
+- MSRV policy: Rust 1.85+ (`rust-version` in Cargo.toml)
+- CI: MSRV check, `cargo audit` security audit, clippy/fmt in release workflow
+- Dockerfile: dependency caching layer, HEALTHCHECK directive
+- Unit tests for `response.rs`, `error.rs`, `config.rs`, `ip_util.rs` extract_ip
+- Integration tests: HEAD request, `?ip=` override, IPv6, cache hit/miss, cache disabled, trusted headers, X-Forwarded-For
+
+### Fixed
+
+- `--cache-size 0` created a cache with capacity 1 instead of disabling
+- Test server ignored config's `cache_size`, always used 100
+
 ## [1.0.0] - 2026-03-13
 
 ### Added

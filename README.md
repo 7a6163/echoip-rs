@@ -1,5 +1,8 @@
 # echoip
 
+[![CI](https://github.com/7a6163/echoip-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/7a6163/echoip-rs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/7a6163/echoip-rs/graph/badge.svg?token=2C8PU0G22O)](https://codecov.io/gh/7a6163/echoip-rs)
+
 A Rust port of [mpolden/echoip](https://github.com/mpolden/echoip) — a simple service for looking up your IP address.
 
 Supports both [MaxMind GeoIP2](https://www.maxmind.com) and [ip66.dev](https://ip66.dev/) as geolocation data sources.

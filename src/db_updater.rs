@@ -16,6 +16,36 @@ pub enum DbUpdateError {
     Validation(String),
 }
 
+/// MaxMind authentication method.
+#[derive(Debug, Clone)]
+pub enum MaxmindAuth {
+    /// Legacy API: license key as query parameter
+    /// Env: `GEOIP_LICENSE_KEY`
+    LegacyKey(String),
+    /// New API: HTTP Basic Auth with account ID + license key
+    /// Env: `MAXMIND_ACCOUNT_ID` + `MAXMIND_LICENSE_KEY`
+    BasicAuth { account_id: String, license_key: String },
+}
+
+impl MaxmindAuth {
+    /// Detect authentication from environment variables.
+    /// Prefers new API (MAXMIND_ACCOUNT_ID + MAXMIND_LICENSE_KEY) over legacy (GEOIP_LICENSE_KEY).
+    pub fn from_env() -> Option<Self> {
+        let account_id = std::env::var("MAXMIND_ACCOUNT_ID").ok().filter(|s| !s.is_empty());
+        let new_key = std::env::var("MAXMIND_LICENSE_KEY").ok().filter(|s| !s.is_empty());
+        let legacy_key = std::env::var("GEOIP_LICENSE_KEY").ok().filter(|s| !s.is_empty());
+
+        if let (Some(id), Some(key)) = (account_id, new_key) {
+            Some(MaxmindAuth::BasicAuth {
+                account_id: id,
+                license_key: key,
+            })
+        } else {
+            legacy_key.map(MaxmindAuth::LegacyKey)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct DownloadResult {
     pub country_path: Option<PathBuf>,
@@ -26,12 +56,12 @@ pub struct DownloadResult {
 
 pub struct DbUpdater {
     data_dir: PathBuf,
-    license_key: Option<String>,
+    auth: Option<MaxmindAuth>,
     client: reqwest::Client,
 }
 
 impl DbUpdater {
-    pub fn new(data_dir: PathBuf, license_key: Option<String>) -> Self {
+    pub fn new(data_dir: PathBuf, auth: Option<MaxmindAuth>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
@@ -39,7 +69,7 @@ impl DbUpdater {
 
         Self {
             data_dir,
-            license_key,
+            auth,
             client,
         }
     }
@@ -49,17 +79,17 @@ impl DbUpdater {
 
         let mut result = DownloadResult::default();
 
-        // MaxMind databases (requires license key)
-        if let Some(ref key) = self.license_key {
-            match self.download_maxmind("GeoLite2-Country", key).await {
+        // MaxMind databases (requires authentication)
+        if self.auth.is_some() {
+            match self.download_maxmind("GeoLite2-Country").await {
                 Ok(path) => result.country_path = Some(path),
                 Err(e) => error!("Failed to download GeoLite2-Country: {e}"),
             }
-            match self.download_maxmind("GeoLite2-City", key).await {
+            match self.download_maxmind("GeoLite2-City").await {
                 Ok(path) => result.city_path = Some(path),
                 Err(e) => error!("Failed to download GeoLite2-City: {e}"),
             }
-            match self.download_maxmind("GeoLite2-ASN", key).await {
+            match self.download_maxmind("GeoLite2-ASN").await {
                 Ok(path) => result.asn_path = Some(path),
                 Err(e) => error!("Failed to download GeoLite2-ASN: {e}"),
             }
@@ -77,17 +107,38 @@ impl DbUpdater {
     async fn download_maxmind(
         &self,
         edition_id: &str,
-        license_key: &str,
     ) -> Result<PathBuf, DbUpdateError> {
-        let url = format!(
-            "https://download.maxmind.com/app/geoip_download?edition_id={edition_id}&license_key={license_key}&suffix=tar.gz"
-        );
+        let auth = self.auth.as_ref().ok_or_else(|| {
+            DbUpdateError::Validation("No MaxMind credentials configured".to_string())
+        })?;
 
         info!("Downloading {edition_id}...");
-        let resp = self.client.get(&url).send().await.map_err(|e| {
+
+        let req = match auth {
+            MaxmindAuth::BasicAuth { account_id, license_key } => {
+                // New API: Basic Auth + new endpoint
+                let url = format!(
+                    "https://download.maxmind.com/geoip/databases/{edition_id}/download?suffix=tar.gz"
+                );
+                self.client.get(&url).basic_auth(account_id, Some(license_key))
+            }
+            MaxmindAuth::LegacyKey(key) => {
+                // Legacy API: license key in query parameter
+                let url = format!(
+                    "https://download.maxmind.com/app/geoip_download?edition_id={edition_id}&license_key={key}&suffix=tar.gz"
+                );
+                self.client.get(&url)
+            }
+        };
+
+        let resp = req.send().await.map_err(|e| {
             // Strip URL to avoid leaking license key in logs
-            DbUpdateError::Validation(format!("HTTP request failed for {edition_id}: {}", e.without_url()))
+            DbUpdateError::Validation(format!(
+                "HTTP request failed for {edition_id}: {}",
+                e.without_url()
+            ))
         })?;
+
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -97,7 +148,15 @@ impl DbUpdater {
         }
 
         let bytes = resp.bytes().await?;
-        let decoder = GzDecoder::new(&bytes[..]);
+        self.extract_mmdb(edition_id, &bytes)
+    }
+
+    fn extract_mmdb(
+        &self,
+        edition_id: &str,
+        tar_gz_bytes: &[u8],
+    ) -> Result<PathBuf, DbUpdateError> {
+        let decoder = GzDecoder::new(tar_gz_bytes);
         let mut archive = tar::Archive::new(decoder);
 
         let target_name = format!("{edition_id}.mmdb");
@@ -125,10 +184,7 @@ impl DbUpdater {
             return Err(DbUpdateError::MmdbNotFound(edition_id.to_string()));
         }
 
-        // Validate the downloaded file
         validate_mmdb(&tmp_path)?;
-
-        // Atomic rename
         std::fs::rename(&tmp_path, &final_path)?;
         info!("Downloaded {edition_id} -> {}", final_path.display());
 
@@ -153,10 +209,7 @@ impl DbUpdater {
         let tmp_path = self.data_dir.join("ip66.mmdb.tmp");
 
         std::fs::write(&tmp_path, &bytes)?;
-
-        // Validate
         validate_mmdb(&tmp_path)?;
-
         std::fs::rename(&tmp_path, &final_path)?;
         info!("Downloaded ip66.mmdb -> {}", final_path.display());
 
@@ -166,7 +219,6 @@ impl DbUpdater {
 
 fn validate_mmdb(path: &Path) -> Result<(), DbUpdateError> {
     maxminddb::Reader::open_readfile(path).map_err(|e| {
-        // Clean up invalid file
         std::fs::remove_file(path).ok();
         DbUpdateError::Validation(format!("{}: {e}", path.display()))
     })?;

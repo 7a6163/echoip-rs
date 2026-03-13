@@ -7,7 +7,7 @@ use tracing::info;
 
 use echoip::cache::Cache;
 use echoip::config::Config;
-use echoip::db_updater::{self, DbUpdater};
+use echoip::db_updater::{self, DbUpdater, MaxmindAuth};
 use echoip::geo::SwappableGeoProvider;
 use echoip::server::{build_router, AppState};
 
@@ -16,17 +16,16 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let config = Config::parse();
-    let license_key = std::env::var("GEOIP_LICENSE_KEY").ok().filter(|k| !k.is_empty());
+    let maxmind_auth = MaxmindAuth::from_env();
 
     // Auto-download databases on startup
-    let download_result = if !config.no_auto_download && license_key.is_some() {
-        let updater = DbUpdater::new(config.data_dir.clone().into(), license_key.clone());
-        info!("Auto-downloading GeoIP databases to {}", config.data_dir);
-        Some(updater.download_all().await)
-    } else if !config.no_auto_download {
-        // No license key: only download ip66
-        let updater = DbUpdater::new(config.data_dir.clone().into(), None);
-        info!("Auto-downloading ip66 database to {}", config.data_dir);
+    let download_result = if !config.no_auto_download {
+        if maxmind_auth.is_some() {
+            info!("Auto-downloading GeoIP databases to {}", config.data_dir);
+        } else {
+            info!("Auto-downloading ip66 database to {}", config.data_dir);
+        }
+        let updater = DbUpdater::new(config.data_dir.clone().into(), maxmind_auth.clone());
         Some(updater.download_all().await)
     } else {
         None
@@ -124,7 +123,8 @@ async fn main() {
                 tokio::time::sleep(std::time::Duration::from_secs(interval_hours * 3600)).await;
                 info!("Starting periodic database update...");
 
-                let updater = DbUpdater::new(data_dir.clone().into(), license_key.clone());
+                let updater =
+                    DbUpdater::new(data_dir.clone().into(), maxmind_auth.clone());
                 let result = updater.download_all().await;
 
                 let cp = db_updater::resolve_paths(

@@ -94,7 +94,15 @@ docker run -p 8080:8080 echoip
 
 ### Automatic Download (Recommended)
 
-Set the `GEOIP_LICENSE_KEY` environment variable and databases will be downloaded automatically on startup:
+Set environment variables and databases will be downloaded automatically on startup. Both old and new MaxMind API formats are supported.
+
+**New API** (Account ID + License Key, recommended):
+
+```
+MAXMIND_ACCOUNT_ID=<id> MAXMIND_LICENSE_KEY=<key> echoip -r -p
+```
+
+**Legacy API** (License Key only):
 
 ```
 GEOIP_LICENSE_KEY=<key> echoip -r -p
@@ -105,10 +113,16 @@ This downloads MaxMind GeoLite2 (Country, City, ASN) and ip66.dev databases to `
 For periodic updates (e.g. every 24 hours):
 
 ```
-GEOIP_LICENSE_KEY=<key> echoip -r -p --update-interval 24
+MAXMIND_ACCOUNT_ID=<id> MAXMIND_LICENSE_KEY=<key> echoip -r -p --update-interval 24
 ```
 
 Databases are hot-reloaded without restarting the server.
+
+| Environment Variable | Description |
+|---------------------|-------------|
+| `MAXMIND_ACCOUNT_ID` | MaxMind account ID (new API) |
+| `MAXMIND_LICENSE_KEY` | MaxMind license key (new API) |
+| `GEOIP_LICENSE_KEY` | MaxMind license key (legacy API, used when `MAXMIND_ACCOUNT_ID` is not set) |
 
 ### Manual Download
 
@@ -147,7 +161,13 @@ Options:
 
 ## Examples
 
-Auto-download and start (simplest):
+Auto-download and start (new API):
+
+```
+MAXMIND_ACCOUNT_ID=<id> MAXMIND_LICENSE_KEY=<key> echoip -r -p
+```
+
+Auto-download and start (legacy API):
 
 ```
 GEOIP_LICENSE_KEY=<key> echoip -r -p
@@ -156,7 +176,7 @@ GEOIP_LICENSE_KEY=<key> echoip -r -p
 Auto-download with periodic updates every 24 hours:
 
 ```
-GEOIP_LICENSE_KEY=<key> echoip -r -p --update-interval 24
+MAXMIND_ACCOUNT_ID=<id> MAXMIND_LICENSE_KEY=<key> echoip -r -p --update-interval 24
 ```
 
 Manual database paths:

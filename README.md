@@ -69,7 +69,7 @@ Pass `-4` or `-6` to your client to switch between IPv4 and IPv6 lookup.
 
 ## Building
 
-Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
+Requires [Rust](https://www.rust-lang.org/tools/install) 1.94+.
 
 ```
 cargo build --release

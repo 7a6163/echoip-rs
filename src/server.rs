@@ -35,7 +35,7 @@ pub async fn build_response(
 
     // Check cache
     {
-        let cache = state.cache.read().await;
+        let mut cache = state.cache.write().await;
         if let Some(mut cached) = cache.get(ip) {
             // Do not cache user agent
             let ua_str = headers

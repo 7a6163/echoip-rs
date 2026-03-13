@@ -1,30 +1,12 @@
-use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
-use fnv::FnvHasher;
-use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
+
+use lru::LruCache;
 
 use crate::response::Response;
 
-fn cache_key(ip: IpAddr) -> u64 {
-    let mut hasher = FnvHasher::default();
-    match ip {
-        IpAddr::V4(v4) => v4.octets().hash(&mut hasher),
-        IpAddr::V6(v6) => v6.octets().hash(&mut hasher),
-    }
-    hasher.finish()
-}
-
-struct CacheEntry {
-    key: u64,
-    #[allow(dead_code)]
-    ip: IpAddr,
-    response: Response,
-}
-
 pub struct Cache {
-    capacity: usize,
-    entries: HashMap<u64, usize>, // key -> index in values
-    values: VecDeque<CacheEntry>,
+    inner: LruCache<IpAddr, Response>,
     evictions: u64,
 }
 
@@ -37,76 +19,48 @@ pub struct CacheStats {
 
 impl Cache {
     pub fn new(capacity: usize) -> Self {
+        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
         Self {
-            capacity,
-            entries: HashMap::new(),
-            values: VecDeque::new(),
+            inner: LruCache::new(cap),
             evictions: 0,
         }
     }
 
     pub fn set(&mut self, ip: IpAddr, response: Response) {
-        if self.capacity == 0 {
+        if self.capacity() == 0 {
             return;
         }
 
-        let k = cache_key(ip);
-
-        // Evict if at or above capacity
-        let min_evictions = (self.entries.len() + 1).saturating_sub(self.capacity);
-        if min_evictions > 0 {
-            for _ in 0..min_evictions {
-                if let Some(entry) = self.values.pop_front() {
-                    self.entries.remove(&entry.key);
-                    self.evictions += 1;
-                }
-            }
-            // Rebuild index after eviction
-            self.rebuild_index();
+        if self.inner.len() == self.inner.cap().get() && self.inner.peek(&ip).is_none() {
+            self.evictions += 1;
         }
 
-        // Remove existing entry for this key
-        if let Some(idx) = self.entries.remove(&k) {
-            self.values.remove(idx);
-            self.rebuild_index();
-        }
-
-        let new_idx = self.values.len();
-        self.values.push_back(CacheEntry {
-            key: k,
-            ip,
-            response,
-        });
-        self.entries.insert(k, new_idx);
+        self.inner.push(ip, response);
     }
 
-    pub fn get(&self, ip: IpAddr) -> Option<Response> {
-        let k = cache_key(ip);
-        let idx = self.entries.get(&k)?;
-        self.values.get(*idx).map(|e| e.response.clone())
+    pub fn get(&mut self, ip: IpAddr) -> Option<Response> {
+        self.inner.get(&ip).cloned()
     }
 
     pub fn resize(&mut self, capacity: usize) {
-        self.capacity = capacity;
+        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
+        self.inner.resize(cap);
         self.evictions = 0;
     }
 
     pub fn capacity(&self) -> usize {
-        self.capacity
+        self.inner.cap().get()
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.clear();
     }
 
     pub fn stats(&self) -> CacheStats {
         CacheStats {
-            size: self.entries.len(),
-            capacity: self.capacity,
+            size: self.inner.len(),
+            capacity: self.inner.cap().get(),
             evictions: self.evictions,
-        }
-    }
-
-    fn rebuild_index(&mut self) {
-        self.entries.clear();
-        for (i, entry) in self.values.iter().enumerate() {
-            self.entries.insert(entry.key, i);
         }
     }
 }
@@ -156,9 +110,10 @@ mod tests {
                 ips.push(ip);
                 cache.set(ip, make_response(ip));
             }
+
+            let actual_size = if capacity == 0 { 0 } else { cache.inner.len() };
             assert_eq!(
-                cache.entries.len(),
-                expected_size,
+                actual_size, expected_size,
                 "size mismatch for add={add_count} cap={capacity}"
             );
             assert_eq!(
@@ -181,8 +136,7 @@ mod tests {
         let ip: IpAddr = "192.0.2.1".parse().unwrap();
         cache.set(ip, make_response(ip));
         cache.set(ip, make_response(ip));
-        assert_eq!(cache.entries.len(), 1);
-        assert_eq!(cache.values.len(), 1);
+        assert_eq!(cache.inner.len(), 1);
     }
 
     #[test]
@@ -192,7 +146,7 @@ mod tests {
             let ip: IpAddr = format!("192.0.2.{i}").parse().unwrap();
             cache.set(ip, make_response(ip));
         }
-        assert_eq!(cache.entries.len(), 10);
+        assert_eq!(cache.inner.len(), 10);
         assert_eq!(cache.evictions, 10);
 
         cache.resize(5);
@@ -200,7 +154,30 @@ mod tests {
 
         let ip: IpAddr = "192.0.2.42".parse().unwrap();
         cache.set(ip, make_response(ip));
-        // After resize to 5, adding one more should evict down to 5
-        assert_eq!(cache.entries.len(), 5);
+        assert_eq!(cache.inner.len(), 5);
+    }
+
+    #[test]
+    fn test_lru_eviction_order() {
+        let mut cache = Cache::new(3);
+        let ip1: IpAddr = "192.0.2.1".parse().unwrap();
+        let ip2: IpAddr = "192.0.2.2".parse().unwrap();
+        let ip3: IpAddr = "192.0.2.3".parse().unwrap();
+        let ip4: IpAddr = "192.0.2.4".parse().unwrap();
+
+        cache.set(ip1, make_response(ip1));
+        cache.set(ip2, make_response(ip2));
+        cache.set(ip3, make_response(ip3));
+
+        // Access ip1, making ip2 the least recently used
+        let _ = cache.get(ip1);
+
+        // Adding ip4 should evict ip2 (LRU), not ip1
+        cache.set(ip4, make_response(ip4));
+
+        assert!(cache.get(ip1).is_some(), "ip1 was accessed recently, should survive");
+        assert!(cache.get(ip2).is_none(), "ip2 was LRU, should be evicted");
+        assert!(cache.get(ip3).is_some(), "ip3 should survive");
+        assert!(cache.get(ip4).is_some(), "ip4 was just added");
     }
 }

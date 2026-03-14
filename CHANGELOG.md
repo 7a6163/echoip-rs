@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0] - 2026-03-14
+
+### Changed
+
+- Docker image switched from `debian:bookworm-slim` to `gcr.io/distroless/cc-debian13` (126MB → 52MB)
+- Removed HEALTHCHECK from Dockerfile (distroless has no shell; use orchestrator-level health checks instead)
+- Removed VOLUME directive (mount data directory at runtime)
+
 ## [1.1.0] - 2026-03-13
 
 ### Changed

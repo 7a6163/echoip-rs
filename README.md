@@ -83,7 +83,7 @@ Pass `-4` or `-6` to your client to switch between IPv4 and IPv6 lookup.
 
 ## Building
 
-Requires [Rust](https://www.rust-lang.org/tools/install) 1.94+.
+Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+.
 
 ```
 cargo build --release
@@ -101,6 +101,8 @@ cargo install --path .
 docker build -t echoip .
 docker run -p 8080:8080 echoip
 ```
+
+The Docker image uses [distroless](https://github.com/GoogleContainerTools/distroless) (~52MB) for minimal attack surface. Use orchestrator-level health checks (e.g. Kubernetes liveness probe) against `/health`.
 
 ## Geolocation Data
 

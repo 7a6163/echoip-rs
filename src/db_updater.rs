@@ -287,9 +287,251 @@ pub fn build_provider(
 }
 
 /// Resolve effective DB paths: CLI flags take priority over auto-downloaded paths.
+#[must_use]
 pub fn resolve_paths(cli_path: &str, downloaded: &Option<PathBuf>) -> Option<String> {
     if !cli_path.is_empty() {
         return Some(cli_path.to_string());
     }
     downloaded.as_ref().map(|p| p.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_paths_cli_takes_priority() {
+        let downloaded = Some(PathBuf::from("/downloaded/db.mmdb"));
+        let result = resolve_paths("/cli/db.mmdb", &downloaded);
+        assert_eq!(result, Some("/cli/db.mmdb".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_paths_uses_downloaded_when_cli_empty() {
+        let downloaded = Some(PathBuf::from("/downloaded/db.mmdb"));
+        let result = resolve_paths("", &downloaded);
+        assert_eq!(result, Some("/downloaded/db.mmdb".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_paths_none_when_both_empty() {
+        let result = resolve_paths("", &None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_build_provider_no_databases() {
+        let provider = build_provider(None, None, None, None);
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_empty_strings() {
+        let provider = build_provider(Some(""), Some(""), Some(""), Some(""));
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_with_maxmind() {
+        let fixtures = format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
+        let country = format!("{fixtures}/GeoIP2-Country-Test.mmdb");
+        let city = format!("{fixtures}/GeoIP2-City-Test.mmdb");
+        let asn = format!("{fixtures}/GeoLite2-ASN-Test.mmdb");
+        let provider = build_provider(Some(&country), Some(&city), Some(&asn), None);
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_nonexistent_ip66() {
+        // Non-existent ip66 path should gracefully fall back
+        let provider = build_provider(None, None, None, Some("/nonexistent/ip66.mmdb"));
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_validate_mmdb_valid() {
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        assert!(validate_mmdb(Path::new(&path)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mmdb_invalid() {
+        let tmp_dir = std::env::temp_dir();
+        let tmp_file = tmp_dir.join("invalid_test.mmdb");
+        std::fs::write(&tmp_file, b"not a valid mmdb").unwrap();
+        let result = validate_mmdb(&tmp_file);
+        assert!(result.is_err());
+        // validate_mmdb should clean up the invalid file
+        assert!(!tmp_file.exists());
+    }
+
+    #[test]
+    fn test_maxmind_auth_construction() {
+        let legacy = MaxmindAuth::LegacyKey("test-key".to_string());
+        match legacy {
+            MaxmindAuth::LegacyKey(k) => assert_eq!(k, "test-key"),
+            _ => panic!("expected LegacyKey"),
+        }
+
+        let basic = MaxmindAuth::BasicAuth {
+            account_id: "123".to_string(),
+            license_key: "abc".to_string(),
+        };
+        match basic {
+            MaxmindAuth::BasicAuth {
+                account_id,
+                license_key,
+            } => {
+                assert_eq!(account_id, "123");
+                assert_eq!(license_key, "abc");
+            }
+            _ => panic!("expected BasicAuth"),
+        }
+    }
+
+    #[test]
+    fn test_db_updater_new() {
+        let updater = DbUpdater::new(PathBuf::from("/tmp/test"), None);
+        assert_eq!(updater.data_dir, PathBuf::from("/tmp/test"));
+        assert!(updater.auth.is_none());
+    }
+
+    #[test]
+    fn test_download_result_default() {
+        let result = DownloadResult::default();
+        assert!(result.country_path.is_none());
+        assert!(result.city_path.is_none());
+        assert!(result.asn_path.is_none());
+        assert!(result.ip66_path.is_none());
+    }
+
+    #[test]
+    fn test_extract_mmdb_from_tar_gz() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+        // Create a tar.gz with a test .mmdb file inside
+        let mmdb_path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let mmdb_data = std::fs::read(&mmdb_path).unwrap();
+
+        let mut tar_gz_buf = Vec::new();
+        {
+            let enc = GzEncoder::new(&mut tar_gz_buf, Compression::fast());
+            let mut tar_builder = tar::Builder::new(enc);
+
+            let mut header = tar::Header::new_gnu();
+            header.set_size(mmdb_data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+
+            tar_builder
+                .append_data(
+                    &mut header,
+                    "GeoLite2-Country_20210101/GeoLite2-Country.mmdb",
+                    mmdb_data.as_slice(),
+                )
+                .unwrap();
+
+            tar_builder.finish().unwrap();
+        }
+
+        let tmp_dir = std::env::temp_dir().join("echoip_test_extract");
+        std::fs::create_dir_all(&tmp_dir).ok();
+
+        let updater = DbUpdater::new(tmp_dir.clone(), None);
+        let result = updater.extract_mmdb("GeoLite2-Country", &tar_gz_buf);
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.exists());
+        assert_eq!(path.file_name().unwrap(), "GeoLite2-Country.mmdb");
+
+        // Cleanup
+        std::fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn test_build_provider_with_ip66() {
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        // ip66 can open any valid MMDB
+        let provider = build_provider(None, None, None, Some(&path));
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_composite() {
+        let fixtures = format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
+        let country = format!("{fixtures}/GeoIP2-Country-Test.mmdb");
+        // Use country DB as ip66 to create composite (maxmind + ip66)
+        let provider = build_provider(Some(&country), None, None, Some(&country));
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_maxmind_invalid_file() {
+        let tmp = std::env::temp_dir().join("invalid_maxmind_test.mmdb");
+        std::fs::write(&tmp, b"invalid mmdb data").unwrap();
+        // Should log error and fall back to empty
+        let provider = build_provider(Some(tmp.to_str().unwrap()), None, None, None);
+        // MaxMind open fails, falls back to empty provider
+        assert!(provider.is_empty());
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[tokio::test]
+    async fn test_download_all_no_auth() {
+        let tmp_dir = std::env::temp_dir().join("echoip_test_download_no_auth");
+        let updater = DbUpdater::new(tmp_dir.clone(), None);
+        let result = updater.download_all().await;
+        // Without auth, MaxMind databases should not be downloaded
+        assert!(result.country_path.is_none());
+        assert!(result.city_path.is_none());
+        assert!(result.asn_path.is_none());
+        // ip66 download will likely fail in test environment but shouldn't panic
+        std::fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    #[test]
+    fn test_extract_mmdb_not_found_in_archive() {
+        use flate2::Compression;
+        use flate2::write::GzEncoder;
+
+        // Create a tar.gz without any .mmdb file
+        let mut tar_gz_buf = Vec::new();
+        {
+            let enc = GzEncoder::new(&mut tar_gz_buf, Compression::fast());
+            let mut tar_builder = tar::Builder::new(enc);
+
+            let mut header = tar::Header::new_gnu();
+            header.set_size(4);
+            header.set_mode(0o644);
+            header.set_cksum();
+
+            tar_builder
+                .append_data(&mut header, "some/other/file.txt", &b"test"[..])
+                .unwrap();
+
+            tar_builder.finish().unwrap();
+        }
+
+        let tmp_dir = std::env::temp_dir().join("echoip_test_extract_missing");
+        std::fs::create_dir_all(&tmp_dir).ok();
+
+        let updater = DbUpdater::new(tmp_dir.clone(), None);
+        let result = updater.extract_mmdb("GeoLite2-Country", &tar_gz_buf);
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            DbUpdateError::MmdbNotFound(_)
+        ));
+
+        std::fs::remove_dir_all(&tmp_dir).ok();
+    }
 }

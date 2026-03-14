@@ -73,3 +73,110 @@ impl GeoProvider for SwappableGeoProvider {
         self.inner.load().is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestProvider {
+        name: String,
+    }
+
+    impl GeoProvider for TestProvider {
+        fn country(&self, _ip: IpAddr) -> Option<Country> {
+            Some(Country {
+                name: self.name.clone(),
+                iso: "XX".into(),
+                is_eu: false,
+            })
+        }
+        fn city(&self, _ip: IpAddr) -> Option<City> {
+            Some(City {
+                name: self.name.clone(),
+                ..Default::default()
+            })
+        }
+        fn asn(&self, _ip: IpAddr) -> Option<Asn> {
+            Some(Asn {
+                number: 1,
+                organization: self.name.clone(),
+            })
+        }
+        fn is_empty(&self) -> bool {
+            false
+        }
+    }
+
+    struct EmptyProvider;
+
+    impl GeoProvider for EmptyProvider {
+        fn country(&self, _ip: IpAddr) -> Option<Country> {
+            None
+        }
+        fn city(&self, _ip: IpAddr) -> Option<City> {
+            None
+        }
+        fn asn(&self, _ip: IpAddr) -> Option<Asn> {
+            None
+        }
+        fn is_empty(&self) -> bool {
+            true
+        }
+    }
+
+    fn ip() -> IpAddr {
+        "127.0.0.1".parse().unwrap()
+    }
+
+    #[test]
+    fn test_swappable_provider_delegates() {
+        let provider = SwappableGeoProvider::new(Box::new(TestProvider {
+            name: "first".into(),
+        }));
+        assert_eq!(provider.country(ip()).unwrap().name, "first");
+        assert_eq!(provider.city(ip()).unwrap().name, "first");
+        assert_eq!(provider.asn(ip()).unwrap().organization, "first");
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_swappable_provider_swap() {
+        let provider = SwappableGeoProvider::new(Box::new(TestProvider {
+            name: "first".into(),
+        }));
+        assert_eq!(provider.country(ip()).unwrap().name, "first");
+
+        provider.swap(Box::new(TestProvider {
+            name: "second".into(),
+        }));
+        assert_eq!(provider.country(ip()).unwrap().name, "second");
+        assert_eq!(provider.city(ip()).unwrap().name, "second");
+        assert_eq!(provider.asn(ip()).unwrap().organization, "second");
+    }
+
+    #[test]
+    fn test_swappable_provider_empty() {
+        let provider = SwappableGeoProvider::new(Box::new(EmptyProvider));
+        assert!(provider.is_empty());
+        assert!(provider.country(ip()).is_none());
+        assert!(provider.city(ip()).is_none());
+        assert!(provider.asn(ip()).is_none());
+    }
+
+    #[test]
+    fn test_default_structs() {
+        let country = Country::default();
+        assert!(country.name.is_empty());
+        assert!(country.iso.is_empty());
+        assert!(!country.is_eu);
+
+        let city = City::default();
+        assert!(city.name.is_empty());
+        assert_eq!(city.latitude, 0.0);
+        assert_eq!(city.longitude, 0.0);
+
+        let asn = Asn::default();
+        assert_eq!(asn.number, 0);
+        assert!(asn.organization.is_empty());
+    }
+}

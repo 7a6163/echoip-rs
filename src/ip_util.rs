@@ -199,6 +199,54 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_ip_whitespace() {
+        assert_eq!(
+            parse_ip("  127.0.0.1  ").unwrap(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_ip_invalid() {
+        assert!(parse_ip("not-an-ip").is_err());
+        assert!(parse_ip("999.999.999.999").is_err());
+    }
+
+    #[test]
+    fn test_parse_ip_ipv6_no_port() {
+        assert_eq!(
+            parse_ip("2001:db8::1").unwrap(),
+            "2001:db8::1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_ip_ipv6_bracket_only() {
+        // Bracket but no port separator — should fail since [addr] isn't valid by itself
+        assert!(parse_ip("[::1]").is_err());
+    }
+
+    #[test]
+    fn test_extract_ip_empty_query() {
+        let headers = axum::http::HeaderMap::new();
+        let remote: IpAddr = "192.168.1.1".parse().unwrap();
+        // Empty query string should fall through to remote
+        let result = extract_ip(&[], &headers, Some(""), Some(remote));
+        assert_eq!(result.unwrap(), remote);
+    }
+
+    #[test]
+    fn test_extract_ip_empty_header_value() {
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert("x-real-ip", "".parse().unwrap());
+        let trusted = vec!["x-real-ip".to_string()];
+        let remote: IpAddr = "192.168.1.1".parse().unwrap();
+        // Empty header should be skipped, fall through to remote
+        let result = extract_ip(&trusted, &headers, None, Some(remote));
+        assert_eq!(result.unwrap(), remote);
+    }
+
+    #[test]
     fn test_extract_ip_no_source() {
         let headers = axum::http::HeaderMap::new();
         let result = extract_ip(&[], &headers, None, None);

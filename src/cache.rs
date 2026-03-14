@@ -199,6 +199,31 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_clear() {
+        let mut cache = Cache::new(10);
+        let ip1: IpAddr = "192.0.2.1".parse().unwrap();
+        let ip2: IpAddr = "192.0.2.2".parse().unwrap();
+        cache.set(ip1, make_response(ip1));
+        cache.set(ip2, make_response(ip2));
+        assert_eq!(cache.stats().size, 2);
+
+        cache.clear();
+        assert_eq!(cache.stats().size, 0);
+        assert!(cache.get(ip1).is_none());
+        assert!(cache.get(ip2).is_none());
+        // Capacity should remain unchanged
+        assert_eq!(cache.capacity(), 10);
+    }
+
+    #[test]
+    fn test_cache_clear_disabled() {
+        let mut cache = Cache::new(0);
+        // clear on disabled cache should not panic
+        cache.clear();
+        assert_eq!(cache.stats().size, 0);
+    }
+
+    #[test]
     fn test_lru_eviction_order() {
         let mut cache = Cache::new(3);
         let ip1: IpAddr = "192.0.2.1".parse().unwrap();

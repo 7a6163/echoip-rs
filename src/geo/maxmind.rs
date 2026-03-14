@@ -219,3 +219,136 @@ impl GeoProvider for MaxmindProvider {
         self.country_db.is_none() && self.city_db.is_none() && self.asn_db.is_none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixtures_dir() -> String {
+        format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"))
+    }
+
+    fn country_db() -> String {
+        format!("{}/GeoIP2-Country-Test.mmdb", fixtures_dir())
+    }
+
+    fn city_db() -> String {
+        format!("{}/GeoIP2-City-Test.mmdb", fixtures_dir())
+    }
+
+    fn asn_db() -> String {
+        format!("{}/GeoLite2-ASN-Test.mmdb", fixtures_dir())
+    }
+
+    #[test]
+    fn test_open_all_none() {
+        let provider = MaxmindProvider::open(None, None, None).unwrap();
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_open_empty_paths() {
+        let provider = MaxmindProvider::open(Some(""), Some(""), Some("")).unwrap();
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_open_nonexistent_path() {
+        let provider = MaxmindProvider::open(Some("/nonexistent.mmdb"), None, None).unwrap();
+        assert!(provider.is_empty());
+    }
+
+    #[test]
+    fn test_open_with_fixtures() {
+        let provider =
+            MaxmindProvider::open(Some(&country_db()), Some(&city_db()), Some(&asn_db())).unwrap();
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_country_lookup() {
+        let provider = MaxmindProvider::open(Some(&country_db()), None, None).unwrap();
+        // 81.2.69.142 is a known test IP in MaxMind test data (GB)
+        let ip: IpAddr = "81.2.69.142".parse().unwrap();
+        let country = provider.country(ip);
+        assert!(country.is_some());
+        let c = country.unwrap();
+        assert_eq!(c.iso, "GB");
+        assert!(!c.name.is_empty());
+    }
+
+    #[test]
+    fn test_country_eu() {
+        let provider = MaxmindProvider::open(Some(&country_db()), None, None).unwrap();
+        // 2.125.160.216 is a known test IP (GB, EU=true in some test data)
+        // 89.160.20.112 is Sweden (SE, EU member)
+        let ip: IpAddr = "89.160.20.112".parse().unwrap();
+        let country = provider.country(ip);
+        assert!(country.is_some());
+        let c = country.unwrap();
+        assert_eq!(c.iso, "SE");
+        assert!(c.is_eu);
+    }
+
+    #[test]
+    fn test_country_unknown_ip() {
+        let provider = MaxmindProvider::open(Some(&country_db()), None, None).unwrap();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        // localhost won't be in the test database
+        let country = provider.country(ip);
+        assert!(country.is_none());
+    }
+
+    #[test]
+    fn test_city_lookup() {
+        let provider = MaxmindProvider::open(None, Some(&city_db()), None).unwrap();
+        let ip: IpAddr = "81.2.69.142".parse().unwrap();
+        let city = provider.city(ip);
+        assert!(city.is_some());
+        let c = city.unwrap();
+        assert!(!c.name.is_empty());
+    }
+
+    #[test]
+    fn test_city_with_location() {
+        let provider = MaxmindProvider::open(None, Some(&city_db()), None).unwrap();
+        // 216.160.83.56 is a known test IP with location data
+        let ip: IpAddr = "216.160.83.56".parse().unwrap();
+        let city = provider.city(ip);
+        assert!(city.is_some());
+        let c = city.unwrap();
+        assert!(c.latitude != 0.0 || c.longitude != 0.0);
+    }
+
+    #[test]
+    fn test_city_unknown_ip() {
+        let provider = MaxmindProvider::open(None, Some(&city_db()), None).unwrap();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(provider.city(ip).is_none());
+    }
+
+    #[test]
+    fn test_asn_lookup() {
+        let provider = MaxmindProvider::open(None, None, Some(&asn_db())).unwrap();
+        // 1.128.0.0 is a known test IP for ASN data
+        let ip: IpAddr = "1.128.0.0".parse().unwrap();
+        let asn = provider.asn(ip);
+        assert!(asn.is_some());
+        let a = asn.unwrap();
+        assert!(a.number > 0);
+        assert!(!a.organization.is_empty());
+    }
+
+    #[test]
+    fn test_asn_unknown_ip() {
+        let provider = MaxmindProvider::open(None, None, Some(&asn_db())).unwrap();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(provider.asn(ip).is_none());
+    }
+
+    #[test]
+    fn test_is_empty_partial() {
+        let provider = MaxmindProvider::open(Some(&country_db()), None, None).unwrap();
+        assert!(!provider.is_empty());
+    }
+}

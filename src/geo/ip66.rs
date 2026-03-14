@@ -111,3 +111,86 @@ impl GeoProvider for Ip66Provider {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_open_nonexistent() {
+        let result = Ip66Provider::open("/nonexistent/ip66.mmdb");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_open_with_country_db() {
+        // ip66 uses the same MMDB format; we can open any valid MMDB
+        // but lookups may not return ip66-specific fields
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let provider = Ip66Provider::open(&path).unwrap();
+        assert!(!provider.is_empty());
+
+        // ip66 city always returns None
+        let ip: IpAddr = "81.2.69.142".parse().unwrap();
+        assert!(provider.city(ip).is_none());
+    }
+
+    #[test]
+    fn test_country_with_test_db() {
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let provider = Ip66Provider::open(&path).unwrap();
+
+        // Should parse country from test database
+        let ip: IpAddr = "81.2.69.142".parse().unwrap();
+        let country = provider.country(ip);
+        // The test DB has country data for this IP
+        if let Some(c) = country {
+            assert!(!c.name.is_empty() || !c.iso.is_empty());
+            // ip66 always sets is_eu to false
+            assert!(!c.is_eu);
+        }
+    }
+
+    #[test]
+    fn test_country_unknown_ip() {
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let provider = Ip66Provider::open(&path).unwrap();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(provider.country(ip).is_none());
+    }
+
+    #[test]
+    fn test_asn_with_test_db() {
+        let path = format!(
+            "{}/tests/fixtures/GeoLite2-ASN-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let provider = Ip66Provider::open(&path).unwrap();
+
+        let ip: IpAddr = "1.128.0.0".parse().unwrap();
+        let asn = provider.asn(ip);
+        if let Some(a) = asn {
+            assert!(a.number > 0);
+        }
+    }
+
+    #[test]
+    fn test_asn_unknown_ip() {
+        let path = format!(
+            "{}/tests/fixtures/GeoLite2-ASN-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let provider = Ip66Provider::open(&path).unwrap();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(provider.asn(ip).is_none());
+    }
+}

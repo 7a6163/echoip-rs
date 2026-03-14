@@ -86,12 +86,20 @@ mod helpers {
     }
 
     pub async fn start_server(geo: Arc<dyn GeoProvider>, config: Config) -> String {
+        start_server_with_tera(geo, config, None).await
+    }
+
+    pub async fn start_server_with_tera(
+        geo: Arc<dyn GeoProvider>,
+        config: Config,
+        tera: Option<Arc<tera::Tera>>,
+    ) -> String {
         let cache_size = config.cache_size;
         let state = AppState {
             config: Arc::new(config),
             geo,
             cache: Arc::new(RwLock::new(Cache::new(cache_size))),
-            tera: None,
+            tera,
         };
 
         let app = build_router(state);
@@ -449,4 +457,243 @@ async fn test_forwarded_for_first_ip() {
         .unwrap();
     let body = resp.text().await.unwrap();
     assert_eq!(body, "1.2.3.4\n");
+}
+
+#[tokio::test]
+async fn test_html_handler() {
+    let template_dir = format!("{}/html", env!("CARGO_MANIFEST_DIR"));
+    let glob = format!("{template_dir}/*");
+    let tera = tera::Tera::new(&glob).expect("failed to load templates");
+
+    let config = Config {
+        template: template_dir,
+        ..test_config()
+    };
+    let base = start_server_with_tera(Arc::new(TestDb), config, Some(Arc::new(tera))).await;
+
+    // Browser-like request (no CLI UA, no explicit Accept)
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&base)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+        )
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let body = resp.text().await.unwrap();
+    assert!(content_type.contains("text/html"));
+    assert!(body.contains("127.0.0.1"));
+    assert!(body.contains("Elbonia"));
+}
+
+#[tokio::test]
+async fn test_html_handler_with_query_ip() {
+    let template_dir = format!("{}/html", env!("CARGO_MANIFEST_DIR"));
+    let glob = format!("{template_dir}/*");
+    let tera = tera::Tera::new(&glob).expect("failed to load templates");
+
+    let config = Config {
+        template: template_dir,
+        ..test_config()
+    };
+    let base = start_server_with_tera(Arc::new(TestDb), config, Some(Arc::new(tera))).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{base}/?ip=8.8.8.8"))
+        .header("User-Agent", "Mozilla/5.0")
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("8.8.8.8"));
+}
+
+#[tokio::test]
+async fn test_root_content_negotiation_json() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    // Root with Accept: application/json should return JSON
+    let (body, status) = http_get(&base, "application/json", "Mozilla/5.0").await;
+    assert_eq!(status, StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["ip"], "127.0.0.1");
+}
+
+#[tokio::test]
+async fn test_root_no_template_non_cli() {
+    // No template configured + non-CLI user agent should return plain text IP
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&base)
+        .header("User-Agent", "Mozilla/5.0 (Macintosh)")
+        .header("Accept", "*/*")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body = resp.text().await.unwrap();
+    assert_eq!(body, "127.0.0.1\n");
+}
+
+#[tokio::test]
+async fn test_not_found_json() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(&format!("{base}/nonexistent"), "application/json", "").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["status"], 404);
+    assert_eq!(json["error"], "404 page not found");
+}
+
+#[tokio::test]
+async fn test_not_found_plain() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(&format!("{base}/nonexistent"), "text/plain", "").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body, "404 page not found");
+}
+
+#[tokio::test]
+async fn test_port_handler_reachable() {
+    let config = Config {
+        port_lookup: true,
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    // Test a port that should not be reachable on loopback
+    let (body, status) = http_get(&format!("{base}/port/19283"), "application/json", "").await;
+    assert_eq!(status, StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["port"], 19283);
+    assert_eq!(json["reachable"], false);
+}
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    let (body, status) = http_get(&format!("{base}/health"), "", "").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"status":"OK"}"#);
+}
+
+#[tokio::test]
+async fn test_empty_db_json() {
+    let config = Config {
+        no_auto_download: true,
+        ..test_config()
+    };
+    let base = start_server(Arc::new(EmptyDb), config).await;
+
+    let (body, status) = http_get(&format!("{base}/json"), "application/json", "curl/7.0").await;
+    assert_eq!(status, StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["ip"], "127.0.0.1");
+    // Empty DB should not include geo fields
+    assert!(json.get("country").is_none());
+    assert!(json.get("city").is_none());
+    assert!(json.get("asn").is_none());
+}
+
+#[tokio::test]
+async fn test_cache_resize_invalid() {
+    let config = Config {
+        profile: true,
+        ..test_config()
+    };
+    let base = start_server(Arc::new(TestDb), config).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{base}/debug/cache/resize"))
+        .header("Accept", "application/json")
+        .body("not-a-number")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn test_root_error_json() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    // Invalid ?ip= with Accept: application/json should return JSON error
+    let (body, status) = http_get(
+        &format!("{base}/?ip=invalid"),
+        "application/json",
+        "Mozilla/5.0",
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["status"], 400);
+}
+
+#[tokio::test]
+async fn test_root_error_cli() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    // Invalid ?ip= with CLI user-agent
+    let (_, status) = http_get(&format!("{base}/?ip=invalid"), "", "curl/7.0").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_root_error_html() {
+    let template_dir = format!("{}/html", env!("CARGO_MANIFEST_DIR"));
+    let glob = format!("{template_dir}/*");
+    let tera = tera::Tera::new(&glob).expect("failed to load templates");
+
+    let config = Config {
+        template: template_dir,
+        ..test_config()
+    };
+    let base = start_server_with_tera(Arc::new(TestDb), config, Some(Arc::new(tera))).await;
+
+    // Invalid ?ip= with HTML template and browser UA
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{base}/?ip=invalid"))
+        .header("User-Agent", "Mozilla/5.0")
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn test_root_error_no_template() {
+    let base = start_server(Arc::new(TestDb), test_config()).await;
+
+    // Invalid ?ip= with non-CLI UA and no template
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{base}/?ip=invalid"))
+        .header("User-Agent", "Mozilla/5.0")
+        .header("Accept", "*/*")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
 }

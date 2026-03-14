@@ -50,10 +50,10 @@ impl GeoProvider for Ip66Provider {
         let mut iso = String::new();
 
         if let Some(ref c) = record.country {
-            if let Some(ref names) = c.names
-                && let Some(n) = names.get("en")
-            {
-                name = n.to_string();
+            if let Some(ref names) = c.names {
+                if let Some(n) = names.get("en") {
+                    name = n.to_string();
+                }
             }
             if let Some(ref code) = c.iso_code {
                 iso = code.clone();
@@ -62,16 +62,17 @@ impl GeoProvider for Ip66Provider {
 
         // Fallback to registered country
         if let Some(ref rc) = record.registered_country {
-            if name.is_empty()
-                && let Some(ref names) = rc.names
-                && let Some(n) = names.get("en")
-            {
-                name = n.to_string();
+            if name.is_empty() {
+                if let Some(ref names) = rc.names {
+                    if let Some(n) = names.get("en") {
+                        name = n.to_string();
+                    }
+                }
             }
-            if iso.is_empty()
-                && let Some(ref code) = rc.iso_code
-            {
-                iso = code.clone();
+            if iso.is_empty() {
+                if let Some(ref code) = rc.iso_code {
+                    iso = code.clone();
+                }
             }
         }
 

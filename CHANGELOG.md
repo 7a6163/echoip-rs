@@ -7,6 +7,12 @@
 - Docker image switched from `debian:bookworm-slim` to `gcr.io/distroless/cc-debian13` (126MB → 52MB)
 - Removed HEALTHCHECK from Dockerfile (distroless has no shell; use orchestrator-level health checks instead)
 - Removed VOLUME directive (mount data directory at runtime)
+- Rewrite let chains to nested if/let for broader Rust version compatibility
+- Lower MSRV from 1.87 to 1.85 (edition 2024 minimum)
+
+### Fixed
+
+- CI workflow branch triggers changed from `master` to `main`
 
 ## [1.1.0] - 2026-03-13
 

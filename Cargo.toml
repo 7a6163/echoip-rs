@@ -2,7 +2,7 @@
 name = "echoip"
 version = "1.2.0"
 edition = "2024"
-rust-version = "1.87"
+rust-version = "1.85"
 description = "A simple service for looking up your IP address with geolocation"
 license = "BSD-3-Clause"
 repository = "https://github.com/7a6163/echoip-rs"

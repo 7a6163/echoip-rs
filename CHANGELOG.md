@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.0] - 2026-03-14
+
+### Changed
+
+- Rewrite let chains to nested if/let for broader Rust version compatibility
+- Lower MSRV from 1.87 to 1.85 (edition 2024 minimum)
+- CI coverage excludes binary entry point (`main.rs`)
+
+### Added
+
+- Test coverage increased from 40% to 90%+
+- Unit tests for geo providers (MaxMind, ip66, composite, swappable)
+- Unit tests for db_updater (resolve_paths, build_provider, extract_mmdb, validate_mmdb)
+- Integration tests for HTML handler, content negotiation, port handler, error branches
+- MaxMind test MMDB fixtures for geo provider testing
+
+### Fixed
+
+- CI workflow branch triggers changed from `master` to `main`
+
 ## [1.2.0] - 2026-03-14
 
 ### Changed
@@ -7,12 +27,6 @@
 - Docker image switched from `debian:bookworm-slim` to `gcr.io/distroless/cc-debian13` (126MB → 52MB)
 - Removed HEALTHCHECK from Dockerfile (distroless has no shell; use orchestrator-level health checks instead)
 - Removed VOLUME directive (mount data directory at runtime)
-- Rewrite let chains to nested if/let for broader Rust version compatibility
-- Lower MSRV from 1.87 to 1.85 (edition 2024 minimum)
-
-### Fixed
-
-- CI workflow branch triggers changed from `master` to `main`
 
 ## [1.1.0] - 2026-03-13
 

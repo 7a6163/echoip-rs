@@ -15,10 +15,10 @@ impl CompositeProvider {
 impl GeoProvider for CompositeProvider {
     fn country(&self, ip: IpAddr) -> Option<Country> {
         for provider in &self.providers {
-            if let Some(country) = provider.country(ip)
-                && (!country.name.is_empty() || !country.iso.is_empty())
-            {
-                return Some(country);
+            if let Some(country) = provider.country(ip) {
+                if !country.name.is_empty() || !country.iso.is_empty() {
+                    return Some(country);
+                }
             }
         }
         None
@@ -26,10 +26,10 @@ impl GeoProvider for CompositeProvider {
 
     fn city(&self, ip: IpAddr) -> Option<City> {
         for provider in &self.providers {
-            if let Some(city) = provider.city(ip)
-                && (!city.name.is_empty() || city.latitude != 0.0 || city.longitude != 0.0)
-            {
-                return Some(city);
+            if let Some(city) = provider.city(ip) {
+                if !city.name.is_empty() || city.latitude != 0.0 || city.longitude != 0.0 {
+                    return Some(city);
+                }
             }
         }
         None
@@ -37,10 +37,10 @@ impl GeoProvider for CompositeProvider {
 
     fn asn(&self, ip: IpAddr) -> Option<Asn> {
         for provider in &self.providers {
-            if let Some(asn) = provider.asn(ip)
-                && asn.number > 0
-            {
-                return Some(asn);
+            if let Some(asn) = provider.asn(ip) {
+                if asn.number > 0 {
+                    return Some(asn);
+                }
             }
         }
         None

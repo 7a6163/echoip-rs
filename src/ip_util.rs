@@ -58,19 +58,21 @@ pub fn parse_ip(s: &str) -> Result<IpAddr, String> {
     }
 
     // Try stripping port from IPv6 [addr]:port
-    if s.starts_with('[')
-        && let Some((addr, _)) = s.strip_prefix('[').and_then(|s| s.split_once("]:"))
-        && let Ok(ip) = addr.parse::<IpAddr>()
-    {
-        return Ok(ip);
+    if s.starts_with('[') {
+        if let Some((addr, _)) = s.strip_prefix('[').and_then(|s| s.split_once("]:")) {
+            if let Ok(ip) = addr.parse::<IpAddr>() {
+                return Ok(ip);
+            }
+        }
     }
 
     // Try stripping port from IPv4 addr:port (only if exactly one colon)
-    if s.matches(':').count() == 1
-        && let Some((host, _)) = s.rsplit_once(':')
-        && let Ok(ip) = host.parse::<IpAddr>()
-    {
-        return Ok(ip);
+    if s.matches(':').count() == 1 {
+        if let Some((host, _)) = s.rsplit_once(':') {
+            if let Ok(ip) = host.parse::<IpAddr>() {
+                return Ok(ip);
+            }
+        }
     }
 
     Err(format!("could not parse IP: {s}"))
@@ -83,10 +85,10 @@ pub fn extract_ip(
     remote_addr: Option<IpAddr>,
 ) -> Result<IpAddr, String> {
     // Query parameter takes priority
-    if let Some(ip_str) = query_ip
-        && !ip_str.is_empty()
-    {
-        return parse_ip(ip_str);
+    if let Some(ip_str) = query_ip {
+        if !ip_str.is_empty() {
+            return parse_ip(ip_str);
+        }
     }
 
     // Trusted headers

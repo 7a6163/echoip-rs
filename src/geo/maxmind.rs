@@ -113,10 +113,10 @@ impl GeoProvider for MaxmindProvider {
         let mut is_eu = false;
 
         if let Some(ref c) = record.country {
-            if let Some(ref names) = c.names
-                && let Some(n) = names.get("en")
-            {
-                name = n.to_string();
+            if let Some(ref names) = c.names {
+                if let Some(n) = names.get("en") {
+                    name = n.to_string();
+                }
             }
             if let Some(ref code) = c.iso_code {
                 iso = code.clone();
@@ -126,16 +126,17 @@ impl GeoProvider for MaxmindProvider {
 
         // Fallback to registered country
         if let Some(ref rc) = record.registered_country {
-            if name.is_empty()
-                && let Some(ref names) = rc.names
-                && let Some(n) = names.get("en")
-            {
-                name = n.to_string();
+            if name.is_empty() {
+                if let Some(ref names) = rc.names {
+                    if let Some(n) = names.get("en") {
+                        name = n.to_string();
+                    }
+                }
             }
-            if iso.is_empty()
-                && let Some(ref code) = rc.iso_code
-            {
-                iso = code.clone();
+            if iso.is_empty() {
+                if let Some(ref code) = rc.iso_code {
+                    iso = code.clone();
+                }
             }
         }
 
@@ -149,36 +150,37 @@ impl GeoProvider for MaxmindProvider {
 
         let mut city = City::default();
 
-        if let Some(ref c) = record.city
-            && let Some(ref names) = c.names
-            && let Some(n) = names.get("en")
-        {
-            city.name = n.to_string();
+        if let Some(ref c) = record.city {
+            if let Some(ref names) = c.names {
+                if let Some(n) = names.get("en") {
+                    city.name = n.to_string();
+                }
+            }
         }
 
-        if let Some(ref subs) = record.subdivisions
-            && let Some(first) = subs.first()
-        {
-            if let Some(ref names) = first.names
-                && let Some(n) = names.get("en")
-            {
-                city.region_name = n.to_string();
-            }
-            if let Some(ref code) = first.iso_code {
-                city.region_code = code.clone();
+        if let Some(ref subs) = record.subdivisions {
+            if let Some(first) = subs.first() {
+                if let Some(ref names) = first.names {
+                    if let Some(n) = names.get("en") {
+                        city.region_name = n.to_string();
+                    }
+                }
+                if let Some(ref code) = first.iso_code {
+                    city.region_code = code.clone();
+                }
             }
         }
 
         if let Some(ref loc) = record.location {
-            if let Some(lat) = loc.latitude
-                && !lat.is_nan()
-            {
-                city.latitude = lat;
+            if let Some(lat) = loc.latitude {
+                if !lat.is_nan() {
+                    city.latitude = lat;
+                }
             }
-            if let Some(lon) = loc.longitude
-                && !lon.is_nan()
-            {
-                city.longitude = lon;
+            if let Some(lon) = loc.longitude {
+                if !lon.is_nan() {
+                    city.longitude = lon;
+                }
             }
             // Metro code is US only
             if let Some(metro) = loc.metro_code {
@@ -193,10 +195,10 @@ impl GeoProvider for MaxmindProvider {
             }
         }
 
-        if let Some(ref postal) = record.postal
-            && let Some(ref code) = postal.code
-        {
-            city.postal_code = code.clone();
+        if let Some(ref postal) = record.postal {
+            if let Some(ref code) = postal.code {
+                city.postal_code = code.clone();
+            }
         }
 
         Some(city)

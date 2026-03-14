@@ -205,6 +205,47 @@ ip66.dev only (no MaxMind key needed):
 echoip --ip66-db ip66.mmdb -r -p --no-auto-download
 ```
 
+## Docker Compose
+
+Quick start with ip66.dev (free, no API key needed):
+
+```yaml
+services:
+  echoip:
+    image: ghcr.io/7a6163/echoip-rs:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - echoip-data:/opt/echoip/data
+    command:
+      - --listen=:8080
+      - --reverse-lookup
+      - --cache-size=1000
+
+volumes:
+  echoip-data:
+```
+
+```
+docker compose up -d
+curl localhost:8080
+```
+
+For production with MaxMind GeoIP2, add environment variables:
+
+```yaml
+    environment:
+      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
+      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+    command:
+      - --listen=:8080
+      - --reverse-lookup
+      - --cache-size=8192
+      - --update-interval=24
+      - --trusted-header=X-Forwarded-For
+```
+
 ## License
 
 BSD 3-Clause. Based on [mpolden/echoip](https://github.com/mpolden/echoip).

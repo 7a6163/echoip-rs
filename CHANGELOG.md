@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.1] - 2026-03-24
+
+### Fixed
+
+- Widen page layout (880px → 1080px) to prevent content overflow
+- IP input field too narrow for full IPv4 addresses (14ch → 20ch)
+- Details grid ratio 1:1 → 3:2 for better readability
+- Use `word-break: break-word` instead of `break-all` for natural text wrapping
+
+### Added
+
+- Docker Compose examples in README
+
 ## [1.3.0] - 2026-03-14
 
 ### Changed

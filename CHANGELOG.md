@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] - 2026-03-24
+
+### Security
+
+- Update `rustls-webpki` 0.103.9 → 0.103.10 (RUSTSEC-2026-0049: CRL matching bug)
+- Update `tar` 0.4.44 → 0.4.45 (RUSTSEC-2026-0067, RUSTSEC-2026-0068: symlink chmod + PAX header)
+- Update `lru` 0.12.5 → 0.16.3 (RUSTSEC-2026-0002: IterMut unsoundness)
+
 ## [1.3.1] - 2026-03-24
 
 ### Fixed

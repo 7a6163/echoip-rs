@@ -5,7 +5,7 @@
 
 A Rust port of [mpolden/echoip](https://github.com/mpolden/echoip) — a simple service for looking up your IP address.
 
-Supports both [MaxMind GeoIP2](https://www.maxmind.com) and [ip66.dev](https://ip66.dev/) as geolocation data sources.
+Supports [MaxMind GeoIP2](https://www.maxmind.com), [DB-IP](https://db-ip.com), and [ip66.dev](https://ip66.dev/) as geolocation data sources. By default, automatically downloads free DB-IP Lite City (country + city + coordinates) and ip66.dev databases on startup — no API key needed.
 
 ## Usage
 
@@ -207,7 +207,7 @@ echoip --ip66-db ip66.mmdb -r -p --no-auto-download
 
 ## Docker Compose
 
-Quick start with ip66.dev (free, no API key needed):
+Quick start with DB-IP + ip66.dev (free, no API key needed):
 
 ```yaml
 services:

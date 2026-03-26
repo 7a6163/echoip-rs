@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0] - 2026-03-26
+
+### Added
+
+- DB-IP Lite City as default free geolocation database (country + city + coordinates)
+- Auto-download DB-IP on startup (no API key required)
+- Map/coordinates now work without MaxMind (DB-IP provides latitude/longitude)
+
+### Changed
+
+- Default free provider priority: MaxMind > DB-IP > ip66.dev
+- DB-IP is primary free source (has city + coords); ip66.dev is fallback (country + ASN only)
+
 ## [1.3.2] - 2026-03-24
 
 ### Security

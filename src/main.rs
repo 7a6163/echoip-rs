@@ -23,7 +23,10 @@ async fn main() {
         if maxmind_auth.is_some() {
             info!("Auto-downloading GeoIP databases to {}", config.data_dir);
         } else {
-            info!("Auto-downloading ip66 database to {}", config.data_dir);
+            info!(
+                "Auto-downloading free GeoIP databases to {}",
+                config.data_dir
+            );
         }
         let updater = DbUpdater::new(config.data_dir.clone().into(), maxmind_auth.clone());
         Some(updater.download_all().await)
@@ -46,6 +49,10 @@ async fn main() {
         &config.asn_db,
         &download_result.as_ref().and_then(|r| r.asn_path.clone()),
     );
+    let dbip_city_path = download_result
+        .as_ref()
+        .and_then(|r| r.dbip_city_path.clone())
+        .map(|p| p.to_string_lossy().to_string());
     let ip66_path = db_updater::resolve_paths(
         config.ip66_db.as_deref().unwrap_or(""),
         &download_result.as_ref().and_then(|r| r.ip66_path.clone()),
@@ -55,6 +62,7 @@ async fn main() {
         country_path.as_deref(),
         city_path.as_deref(),
         asn_path.as_deref(),
+        dbip_city_path.as_deref(),
         ip66_path.as_deref(),
     );
 
@@ -132,6 +140,10 @@ async fn main() {
                     db_updater::resolve_paths(&config_for_updater.country_db, &result.country_path);
                 let cip = db_updater::resolve_paths(&config_for_updater.city_db, &result.city_path);
                 let ap = db_updater::resolve_paths(&config_for_updater.asn_db, &result.asn_path);
+                let dbip = result
+                    .dbip_city_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string());
                 let ip = db_updater::resolve_paths(
                     config_for_updater.ip66_db.as_deref().unwrap_or(""),
                     &result.ip66_path,
@@ -141,6 +153,7 @@ async fn main() {
                     cp.as_deref(),
                     cip.as_deref(),
                     ap.as_deref(),
+                    dbip.as_deref(),
                     ip.as_deref(),
                 );
 

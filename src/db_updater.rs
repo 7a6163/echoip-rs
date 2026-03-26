@@ -60,6 +60,7 @@ pub struct DownloadResult {
     pub country_path: Option<PathBuf>,
     pub city_path: Option<PathBuf>,
     pub asn_path: Option<PathBuf>,
+    pub dbip_city_path: Option<PathBuf>,
     pub ip66_path: Option<PathBuf>,
 }
 
@@ -104,7 +105,13 @@ impl DbUpdater {
             }
         }
 
-        // ip66.dev database (no key needed)
+        // DB-IP Lite City (free, no key needed, has city + coordinates)
+        match self.download_dbip().await {
+            Ok(path) => result.dbip_city_path = Some(path),
+            Err(e) => error!("Failed to download DB-IP City: {e}"),
+        }
+
+        // ip66.dev database (free fallback, country + ASN only)
         match self.download_ip66().await {
             Ok(path) => result.ip66_path = Some(path),
             Err(e) => error!("Failed to download ip66.mmdb: {e}"),
@@ -202,27 +209,63 @@ impl DbUpdater {
         Ok(final_path)
     }
 
+    async fn download_dbip(&self) -> Result<PathBuf, DbUpdateError> {
+        let url = "https://cdn.jsdelivr.net/npm/dbip-city-lite/dbip-city-lite.mmdb.gz";
+        info!("Downloading DB-IP Lite City...");
+        self.download_gz_mmdb(url, "dbip-city-lite.mmdb").await
+    }
+
     async fn download_ip66(&self) -> Result<PathBuf, DbUpdateError> {
         let url = "https://downloads.ip66.dev/db/ip66.mmdb";
-
         info!("Downloading ip66.mmdb...");
+        self.download_raw_mmdb(url, "ip66.mmdb").await
+    }
+
+    /// Download a gzip-compressed MMDB file (e.g. DB-IP).
+    async fn download_gz_mmdb(&self, url: &str, filename: &str) -> Result<PathBuf, DbUpdateError> {
         let resp = self.client.get(url).send().await?;
         let status = resp.status();
         if !status.is_success() {
             return Err(DbUpdateError::Validation(format!(
-                "ip66.dev returned {status}"
+                "HTTP {status} downloading {filename}"
+            )));
+        }
+
+        let gz_bytes = resp.bytes().await?;
+        let mut decoder = GzDecoder::new(&gz_bytes[..]);
+        let mut buf = Vec::new();
+        decoder.read_to_end(&mut buf)?;
+
+        let final_path = self.data_dir.join(filename);
+        let tmp_path = self.data_dir.join(format!("{filename}.tmp"));
+
+        std::fs::write(&tmp_path, &buf)?;
+        validate_mmdb(&tmp_path)?;
+        std::fs::rename(&tmp_path, &final_path)?;
+        info!("Downloaded {filename} -> {}", final_path.display());
+
+        Ok(final_path)
+    }
+
+    /// Download a raw (uncompressed) MMDB file (e.g. ip66).
+    async fn download_raw_mmdb(&self, url: &str, filename: &str) -> Result<PathBuf, DbUpdateError> {
+        let resp = self.client.get(url).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(DbUpdateError::Validation(format!(
+                "HTTP {status} downloading {filename}"
             )));
         }
 
         let bytes = resp.bytes().await?;
 
-        let final_path = self.data_dir.join("ip66.mmdb");
-        let tmp_path = self.data_dir.join("ip66.mmdb.tmp");
+        let final_path = self.data_dir.join(filename);
+        let tmp_path = self.data_dir.join(format!("{filename}.tmp"));
 
         std::fs::write(&tmp_path, &bytes)?;
         validate_mmdb(&tmp_path)?;
         std::fs::rename(&tmp_path, &final_path)?;
-        info!("Downloaded ip66.mmdb -> {}", final_path.display());
+        info!("Downloaded {filename} -> {}", final_path.display());
 
         Ok(final_path)
     }
@@ -237,10 +280,14 @@ fn validate_mmdb(path: &Path) -> Result<(), DbUpdateError> {
 }
 
 /// Build a geo provider from available database paths.
+///
+/// Priority: MaxMind > DB-IP > ip66 (composite fallback chain).
+/// DB-IP Lite City is MaxMind-compatible MMDB with country + city + coordinates.
 pub fn build_provider(
     country_path: Option<&str>,
     city_path: Option<&str>,
     asn_path: Option<&str>,
+    dbip_city_path: Option<&str>,
     ip66_path: Option<&str>,
 ) -> Box<dyn crate::geo::GeoProvider> {
     use crate::geo::GeoProvider;
@@ -250,6 +297,7 @@ pub fn build_provider(
 
     let mut providers: Vec<Box<dyn GeoProvider>> = Vec::new();
 
+    // 1. MaxMind (highest priority, requires API key)
     let has_maxmind = [country_path, city_path, asn_path]
         .iter()
         .any(|p| p.is_some_and(|s| !s.is_empty()));
@@ -267,6 +315,21 @@ pub fn build_provider(
         }
     }
 
+    // 2. DB-IP Lite City (free, country + city + coordinates)
+    if let Some(path) = dbip_city_path.filter(|s| !s.is_empty()) {
+        // DB-IP uses MaxMind-compatible MMDB; load as city DB (includes country data)
+        match MaxmindProvider::open(Some(path), Some(path), None) {
+            Ok(p) => {
+                if !p.is_empty() {
+                    info!("Loaded DB-IP Lite City database");
+                    providers.push(Box::new(p));
+                }
+            }
+            Err(e) => error!("Failed to open DB-IP database: {e}"),
+        }
+    }
+
+    // 3. ip66.dev (free fallback, country + ASN only)
     if let Some(path) = ip66_path.filter(|s| !s.is_empty()) {
         match Ip66Provider::open(path) {
             Ok(p) => {
@@ -321,13 +384,13 @@ mod tests {
 
     #[test]
     fn test_build_provider_no_databases() {
-        let provider = build_provider(None, None, None, None);
+        let provider = build_provider(None, None, None, None, None);
         assert!(provider.is_empty());
     }
 
     #[test]
     fn test_build_provider_empty_strings() {
-        let provider = build_provider(Some(""), Some(""), Some(""), Some(""));
+        let provider = build_provider(Some(""), Some(""), Some(""), None, Some(""));
         assert!(provider.is_empty());
     }
 
@@ -337,14 +400,14 @@ mod tests {
         let country = format!("{fixtures}/GeoIP2-Country-Test.mmdb");
         let city = format!("{fixtures}/GeoIP2-City-Test.mmdb");
         let asn = format!("{fixtures}/GeoLite2-ASN-Test.mmdb");
-        let provider = build_provider(Some(&country), Some(&city), Some(&asn), None);
+        let provider = build_provider(Some(&country), Some(&city), Some(&asn), None, None);
         assert!(!provider.is_empty());
     }
 
     #[test]
     fn test_build_provider_nonexistent_ip66() {
         // Non-existent ip66 path should gracefully fall back
-        let provider = build_provider(None, None, None, Some("/nonexistent/ip66.mmdb"));
+        let provider = build_provider(None, None, None, None, Some("/nonexistent/ip66.mmdb"));
         assert!(provider.is_empty());
     }
 
@@ -405,6 +468,7 @@ mod tests {
         assert!(result.country_path.is_none());
         assert!(result.city_path.is_none());
         assert!(result.asn_path.is_none());
+        assert!(result.dbip_city_path.is_none());
         assert!(result.ip66_path.is_none());
     }
 
@@ -455,13 +519,34 @@ mod tests {
     }
 
     #[test]
+    fn test_build_provider_with_dbip() {
+        let path = format!(
+            "{}/tests/fixtures/GeoIP2-City-Test.mmdb",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        // DB-IP uses MaxMind-compatible MMDB format
+        let provider = build_provider(None, None, None, Some(&path), None);
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
+    fn test_build_provider_dbip_plus_ip66_composite() {
+        let fixtures = format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
+        let city = format!("{fixtures}/GeoIP2-City-Test.mmdb");
+        let country = format!("{fixtures}/GeoIP2-Country-Test.mmdb");
+        // Both DB-IP and ip66 → composite provider
+        let provider = build_provider(None, None, None, Some(&city), Some(&country));
+        assert!(!provider.is_empty());
+    }
+
+    #[test]
     fn test_build_provider_with_ip66() {
         let path = format!(
             "{}/tests/fixtures/GeoIP2-Country-Test.mmdb",
             env!("CARGO_MANIFEST_DIR")
         );
         // ip66 can open any valid MMDB
-        let provider = build_provider(None, None, None, Some(&path));
+        let provider = build_provider(None, None, None, None, Some(&path));
         assert!(!provider.is_empty());
     }
 
@@ -470,7 +555,7 @@ mod tests {
         let fixtures = format!("{}/tests/fixtures", env!("CARGO_MANIFEST_DIR"));
         let country = format!("{fixtures}/GeoIP2-Country-Test.mmdb");
         // Use country DB as ip66 to create composite (maxmind + ip66)
-        let provider = build_provider(Some(&country), None, None, Some(&country));
+        let provider = build_provider(Some(&country), None, None, None, Some(&country));
         assert!(!provider.is_empty());
     }
 
@@ -479,7 +564,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("invalid_maxmind_test.mmdb");
         std::fs::write(&tmp, b"invalid mmdb data").unwrap();
         // Should log error and fall back to empty
-        let provider = build_provider(Some(tmp.to_str().unwrap()), None, None, None);
+        let provider = build_provider(Some(tmp.to_str().unwrap()), None, None, None, None);
         // MaxMind open fails, falls back to empty provider
         assert!(provider.is_empty());
         std::fs::remove_file(&tmp).ok();

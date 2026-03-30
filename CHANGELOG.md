@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-03-31
+
+### Fixed
+
+- Add DB-IP attribution to map footer (required by DB-IP Lite license)
+
 ## [1.4.0] - 2026-03-26
 
 ### Added
